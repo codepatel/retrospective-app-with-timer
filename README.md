@@ -14,7 +14,7 @@ Any changes you make to your deployed app will be automatically pushed to this r
 
 Your project is live at:
 
-**[https://vercel.com/hardik-patels-projects-e0efd74c/v0-retrospective-app-with-timer](https://vercel.com/hardik-patels-projects-e0efd74c/v0-retrospective-app-with-timer)**
+**[https://vercel.com/projects-e0efd74c/retrospective-app-with-timer](https://vercel.com/projects-e0efd74c/retrospective-app-with-timer)**
 
 ## Build your app
 
