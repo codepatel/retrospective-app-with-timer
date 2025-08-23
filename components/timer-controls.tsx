@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Play, Pause, Square, Clock } from "lucide-react"
@@ -12,7 +12,11 @@ const TIMER_OPTIONS = [
   { value: 15, label: "15 minutes" },
 ]
 
-export function TimerControls() {
+export interface TimerControlsRef {
+  resetTimer: () => void
+}
+
+export const TimerControls = forwardRef<TimerControlsRef>((props, ref) => {
   const [selectedMinutes, setSelectedMinutes] = useState<number>(5)
   const [timeLeft, setTimeLeft] = useState<number>(0)
   const [isRunning, setIsRunning] = useState(false)
@@ -57,6 +61,16 @@ export function TimerControls() {
     setIsRunning(false)
     setTimeLeft(0)
   }
+
+  const resetTimer = () => {
+    setIsRunning(false)
+    setTimeLeft(0)
+    setSelectedMinutes(5) // Reset to default 5 minutes
+  }
+
+  useImperativeHandle(ref, () => ({
+    resetTimer,
+  }))
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -114,4 +128,6 @@ export function TimerControls() {
       </div>
     </div>
   )
-}
+})
+
+TimerControls.displayName = "TimerControls"

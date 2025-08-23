@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { FeedbackColumn } from "@/components/feedback-column"
-import { TimerControls } from "@/components/timer-controls"
-import { Copy, RotateCcw } from "lucide-react"
+import { TimerControls, type TimerControlsRef } from "@/components/timer-controls"
+import { Copy, RotateCcw, Share2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 interface FeedbackItem {
@@ -14,6 +14,14 @@ interface FeedbackItem {
   category: string
   vote_count: number
   created_at: string
+}
+
+interface Retrospective {
+  id: number
+  title: string
+  session_id: string
+  created_at: string
+  is_active: boolean
 }
 
 const CATEGORIES = [
@@ -25,13 +33,42 @@ const CATEGORIES = [
 
 export function RetrospectiveBoard() {
   const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([])
-  const [currentRetrospectiveId, setCurrentRetrospectiveId] = useState<number | null>(null)
+  const [currentRetrospective, setCurrentRetrospective] = useState<Retrospective | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [shareUrl, setShareUrl] = useState<string>("")
+  const timerRef = useRef<TimerControlsRef>(null)
   const { toast } = useToast()
 
   useEffect(() => {
-    initializeRetrospective()
+    const urlParams = new URLSearchParams(window.location.search)
+    const sessionId = urlParams.get("session")
+
+    if (sessionId) {
+      loadExistingRetrospective(sessionId)
+    } else {
+      initializeRetrospective()
+    }
   }, [])
+
+  const loadExistingRetrospective = async (sessionId: string) => {
+    try {
+      const response = await fetch(`/api/retrospectives/${sessionId}`)
+      if (response.ok) {
+        const retrospective = await response.json()
+        setCurrentRetrospective(retrospective)
+        setShareUrl(`${window.location.origin}?session=${retrospective.session_id}`)
+        loadFeedbackItems(retrospective.id)
+      } else {
+        // Session not found, create new one
+        initializeRetrospective()
+      }
+    } catch (error) {
+      console.error("Failed to load retrospective:", error)
+      initializeRetrospective()
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const initializeRetrospective = async () => {
     try {
@@ -44,7 +81,11 @@ export function RetrospectiveBoard() {
 
       if (response.ok) {
         const retrospective = await response.json()
-        setCurrentRetrospectiveId(retrospective.id)
+        setCurrentRetrospective(retrospective)
+        const newShareUrl = `${window.location.origin}?session=${retrospective.session_id}`
+        setShareUrl(newShareUrl)
+        // Update browser URL without page reload
+        window.history.pushState({}, "", newShareUrl)
         loadFeedbackItems(retrospective.id)
       }
     } catch (error) {
@@ -72,14 +113,14 @@ export function RetrospectiveBoard() {
   }
 
   const handleAddFeedback = async (category: string, content: string) => {
-    if (!currentRetrospectiveId) return
+    if (!currentRetrospective) return
 
     try {
       const response = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          retrospective_id: currentRetrospectiveId,
+          retrospective_id: currentRetrospective.id,
           category,
           content,
         }),
@@ -139,8 +180,8 @@ export function RetrospectiveBoard() {
 
       if (response.ok) {
         // Reload feedback items to get updated vote counts
-        if (currentRetrospectiveId) {
-          loadFeedbackItems(currentRetrospectiveId)
+        if (currentRetrospective) {
+          loadFeedbackItems(currentRetrospective.id)
         }
         toast({
           title: "Success",
@@ -181,12 +222,29 @@ export function RetrospectiveBoard() {
 
   const startNewRetrospective = () => {
     setFeedbackItems([])
-    setCurrentRetrospectiveId(null)
+    setCurrentRetrospective(null)
+    timerRef.current?.resetTimer()
     initializeRetrospective()
     toast({
       title: "Success",
       description: "Started new retrospective session",
     })
+  }
+
+  const copyShareUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      toast({
+        title: "Success",
+        description: "Share URL copied to clipboard",
+      })
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to copy URL to clipboard",
+        variant: "destructive",
+      })
+    }
   }
 
   if (isLoading) {
@@ -216,8 +274,23 @@ export function RetrospectiveBoard() {
             </div>
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <TimerControls />
+        <CardContent className="space-y-4">
+          <TimerControls ref={timerRef} />
+
+          {shareUrl && (
+            <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <Share2 className="w-4 h-4 text-blue-600" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-blue-900">Share this URL to share the retro:</p>
+                <button
+                  onClick={copyShareUrl}
+                  className="text-sm text-blue-700 hover:text-blue-800 underline break-all"
+                >
+                  {shareUrl}
+                </button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

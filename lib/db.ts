@@ -19,9 +19,23 @@ export async function initializeDatabase() {
       CREATE TABLE IF NOT EXISTS retrospectives (
         id SERIAL PRIMARY KEY,
         title VARCHAR(255) NOT NULL DEFAULT 'Retrospective Session',
+        session_id VARCHAR(36) UNIQUE NOT NULL DEFAULT gen_random_uuid()::text,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         is_active BOOLEAN DEFAULT true
       )
+    `
+
+    await sql`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'retrospectives' AND column_name = 'session_id'
+        ) THEN
+          ALTER TABLE retrospectives 
+          ADD COLUMN session_id VARCHAR(36) UNIQUE DEFAULT gen_random_uuid()::text;
+        END IF;
+      END $$;
     `
 
     await sql`

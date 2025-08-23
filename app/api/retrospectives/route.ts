@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     const result = await sql`
       INSERT INTO retrospectives (title)
       VALUES (${title || "Retrospective Session"})
-      RETURNING id, title, created_at, is_active
+      RETURNING id, title, session_id, created_at, is_active
     `
 
     return NextResponse.json(result[0])
