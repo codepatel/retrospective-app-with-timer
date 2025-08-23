@@ -81,6 +81,37 @@ export async function initializeDatabase() {
     `
 
     await sql`
+      DO $$
+      BEGIN
+        -- Add device_id column if it doesn't exist
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'votes' AND column_name = 'device_id'
+        ) THEN
+          ALTER TABLE votes ADD COLUMN device_id VARCHAR(36);
+        END IF;
+        
+        -- Drop old unique constraint if it exists
+        IF EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE constraint_name = 'votes_feedback_item_id_ip_address_key' 
+          AND table_name = 'votes'
+        ) THEN
+          ALTER TABLE votes DROP CONSTRAINT votes_feedback_item_id_ip_address_key;
+        END IF;
+        
+        -- Add new unique constraint for device-based voting
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE constraint_name = 'votes_feedback_item_id_device_id_key' 
+          AND table_name = 'votes'
+        ) THEN
+          ALTER TABLE votes ADD CONSTRAINT votes_feedback_item_id_device_id_key UNIQUE(feedback_item_id, device_id);
+        END IF;
+      END $$;
+    `
+
+    await sql`
       CREATE VIEW feedback_items_with_votes AS
       SELECT 
         fi.*,

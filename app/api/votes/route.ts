@@ -1,42 +1,21 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 
-function getClientIP(request: NextRequest): string {
-  // Try to get IP from various headers
-  const forwarded = request.headers.get("x-forwarded-for")
-  const realIP = request.headers.get("x-real-ip")
-  const cfConnectingIP = request.headers.get("cf-connecting-ip")
-
-  if (forwarded) {
-    return forwarded.split(",")[0].trim()
-  }
-
-  if (realIP) {
-    return realIP
-  }
-
-  if (cfConnectingIP) {
-    return cfConnectingIP
-  }
-
-  // Fallback to a default IP for development
-  return "127.0.0.1"
-}
-
 export async function POST(request: NextRequest) {
   try {
-    const { feedback_item_id } = await request.json()
+    const { feedback_item_id, device_id } = await request.json()
 
     if (!feedback_item_id) {
       return NextResponse.json({ error: "Feedback item ID is required" }, { status: 400 })
     }
 
-    const voterIP = getClientIP(request)
+    if (!device_id) {
+      return NextResponse.json({ error: "Device ID is required" }, { status: 400 })
+    }
 
-    // Check if this IP has already voted for this feedback item
     const existingVote = await sql`
       SELECT id FROM votes 
-      WHERE feedback_item_id = ${feedback_item_id} AND ip_address = ${voterIP}
+      WHERE feedback_item_id = ${feedback_item_id} AND device_id = ${device_id}
     `
 
     if (existingVote.length > 0) {
@@ -52,10 +31,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Feedback item not found" }, { status: 404 })
     }
 
-    // Add the vote
     const result = await sql`
-      INSERT INTO votes (feedback_item_id, ip_address)
-      VALUES (${feedback_item_id}, ${voterIP})
+      INSERT INTO votes (feedback_item_id, device_id)
+      VALUES (${feedback_item_id}, ${device_id})
       RETURNING id, feedback_item_id, created_at
     `
 
