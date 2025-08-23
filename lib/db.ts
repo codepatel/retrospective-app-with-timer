@@ -74,9 +74,9 @@ export async function initializeDatabase() {
       CREATE TABLE IF NOT EXISTS votes (
         id SERIAL PRIMARY KEY,
         feedback_item_id INTEGER REFERENCES feedback_items(id) ON DELETE CASCADE,
-        ip_address INET NOT NULL,
+        device_id VARCHAR(36) NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-        UNIQUE(feedback_item_id, ip_address)
+        UNIQUE(feedback_item_id, device_id)
       )
     `
 
@@ -91,6 +91,7 @@ export async function initializeDatabase() {
           ALTER TABLE votes ADD COLUMN device_id VARCHAR(36);
         END IF;
         
+        -- Remove ip_address column and its constraints
         -- Drop old unique constraint if it exists
         IF EXISTS (
           SELECT 1 FROM information_schema.table_constraints 
@@ -98,6 +99,22 @@ export async function initializeDatabase() {
           AND table_name = 'votes'
         ) THEN
           ALTER TABLE votes DROP CONSTRAINT votes_feedback_item_id_ip_address_key;
+        END IF;
+        
+        -- Drop ip_address column if it exists
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'votes' AND column_name = 'ip_address'
+        ) THEN
+          ALTER TABLE votes DROP COLUMN ip_address;
+        END IF;
+        
+        -- Make device_id NOT NULL if it isn't already
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'votes' AND column_name = 'device_id' AND is_nullable = 'YES'
+        ) THEN
+          ALTER TABLE votes ALTER COLUMN device_id SET NOT NULL;
         END IF;
         
         -- Add new unique constraint for device-based voting
