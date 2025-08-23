@@ -284,10 +284,12 @@ export function RetrospectiveBoard() {
                 <p className="text-sm font-medium text-blue-900">Share this URL to share the retro:</p>
                 <button
                   onClick={copyShareUrl}
-                  className="text-sm text-blue-700 hover:text-blue-800 underline break-all"
+                  className="flex items-center gap-2 mt-1 p-2 bg-white border border-blue-300 rounded-md hover:bg-blue-50 hover:border-blue-400 transition-colors group w-full text-left"
                 >
-                  {shareUrl}
+                  <span className="text-sm text-blue-700 break-all flex-1">{shareUrl}</span>
+                  <Copy className="w-4 h-4 text-blue-500 group-hover:text-blue-600 flex-shrink-0" />
                 </button>
+                <p className="text-xs text-blue-600 mt-1">Click to copy</p>
               </div>
             </div>
           )}
