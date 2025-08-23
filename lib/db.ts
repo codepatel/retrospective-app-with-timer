@@ -74,9 +74,8 @@ export async function initializeDatabase() {
       CREATE TABLE IF NOT EXISTS votes (
         id SERIAL PRIMARY KEY,
         feedback_item_id INTEGER REFERENCES feedback_items(id) ON DELETE CASCADE,
-        device_id VARCHAR(36) NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-        UNIQUE(feedback_item_id, device_id)
+        device_id VARCHAR(36) UNIQUE DEFAULT gen_random_uuid()::text,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       )
     `
 
@@ -90,6 +89,10 @@ export async function initializeDatabase() {
         ) THEN
           ALTER TABLE votes ADD COLUMN device_id VARCHAR(36);
         END IF;
+        
+        -- Clean up existing null device_id values before adding NOT NULL constraint
+        -- Delete any existing votes with null device_id (these are from old IP-based system)
+        DELETE FROM votes WHERE device_id IS NULL;
         
         -- Remove ip_address column and its constraints
         -- Drop old unique constraint if it exists
