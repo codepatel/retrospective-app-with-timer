@@ -7,6 +7,7 @@ import { FeedbackColumn } from "@/components/feedback-column"
 import { TimerControls, type TimerControlsRef } from "@/components/timer-controls"
 import { Copy, RotateCcw, Share2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { getDeviceId } from "@/lib/device-id"
 
 interface FeedbackItem {
   id: number
@@ -172,10 +173,14 @@ export function RetrospectiveBoard() {
 
   const handleVote = async (feedbackId: number) => {
     try {
+      const deviceId = getDeviceId()
       const response = await fetch("/api/votes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ feedback_item_id: feedbackId }),
+        body: JSON.stringify({
+          feedback_item_id: feedbackId,
+          device_id: deviceId,
+        }),
       })
 
       if (response.ok) {
@@ -186,6 +191,13 @@ export function RetrospectiveBoard() {
         toast({
           title: "Success",
           description: "Vote added successfully",
+        })
+      } else {
+        const errorData = await response.json()
+        toast({
+          title: "Error",
+          description: errorData.error || "Failed to add vote",
+          variant: "destructive",
         })
       }
     } catch (error) {
