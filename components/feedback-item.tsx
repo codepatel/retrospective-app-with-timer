@@ -18,9 +18,10 @@ interface FeedbackItemProps {
   item: FeedbackItemType
   onEdit: (id: number, content: string) => void
   onVote: (feedbackId: number) => void
+  hasVoted?: boolean
 }
 
-export function FeedbackItem({ item, onEdit, onVote }: FeedbackItemProps) {
+export function FeedbackItem({ item, onEdit, onVote, hasVoted = false }: FeedbackItemProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState(item.content)
 
@@ -64,9 +65,11 @@ export function FeedbackItem({ item, onEdit, onVote }: FeedbackItemProps) {
                 onClick={() => onVote(item.id)}
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 text-slate-600 hover:text-blue-600"
+                className={`h-7 px-2 transition-colors ${
+                  hasVoted ? "text-blue-600 bg-blue-50 hover:bg-blue-100" : "text-slate-600 hover:text-blue-600"
+                }`}
               >
-                <ThumbsUp className="w-3 h-3 mr-1" />
+                <ThumbsUp className={`w-3 h-3 mr-1 ${hasVoted ? "fill-current" : ""}`} />
                 {item.vote_count}
               </Button>
               <Button

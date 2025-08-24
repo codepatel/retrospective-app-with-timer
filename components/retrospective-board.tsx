@@ -37,6 +37,7 @@ export function RetrospectiveBoard() {
   const [currentRetrospective, setCurrentRetrospective] = useState<Retrospective | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [shareUrl, setShareUrl] = useState<string>("")
+  const [votedItems, setVotedItems] = useState<Set<number>>(new Set())
   const timerRef = useRef<TimerControlsRef>(null)
   const { toast } = useToast()
 
@@ -51,6 +52,12 @@ export function RetrospectiveBoard() {
     }
   }, [])
 
+  useEffect(() => {
+    if (currentRetrospective) {
+      loadUserVotes()
+    }
+  }, [currentRetrospective])
+
   const loadExistingRetrospective = async (sessionId: string) => {
     try {
       const response = await fetch(`/api/retrospectives/${sessionId}`)
@@ -60,7 +67,6 @@ export function RetrospectiveBoard() {
         setShareUrl(`${window.location.origin}?session=${retrospective.session_id}`)
         loadFeedbackItems(retrospective.id)
       } else {
-        // Session not found, create new one
         initializeRetrospective()
       }
     } catch (error) {
@@ -73,7 +79,6 @@ export function RetrospectiveBoard() {
 
   const initializeRetrospective = async () => {
     try {
-      // Create a new retrospective session
       const response = await fetch("/api/retrospectives", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -85,7 +90,6 @@ export function RetrospectiveBoard() {
         setCurrentRetrospective(retrospective)
         const newShareUrl = `${window.location.origin}?session=${retrospective.session_id}`
         setShareUrl(newShareUrl)
-        // Update browser URL without page reload
         window.history.pushState({}, "", newShareUrl)
         loadFeedbackItems(retrospective.id)
       }
@@ -184,19 +188,34 @@ export function RetrospectiveBoard() {
       })
 
       if (response.ok) {
-        // Reload feedback items to get updated vote counts
-        if (currentRetrospective) {
-          loadFeedbackItems(currentRetrospective.id)
+        const data = await response.json()
+
+        if (data.action === "added") {
+          setVotedItems((prev) => new Set([...prev, feedbackId]))
+          toast({
+            title: "Success",
+            description: "Vote added successfully",
+          })
+        } else if (data.action === "removed") {
+          setVotedItems((prev) => {
+            const newSet = new Set(prev)
+            newSet.delete(feedbackId)
+            return newSet
+          })
+          toast({
+            title: "Success",
+            description: "Vote removed successfully",
+          })
         }
-        toast({
-          title: "Success",
-          description: "Vote added successfully",
-        })
+
+        setFeedbackItems((prev) =>
+          prev.map((item) => (item.id === feedbackId ? { ...item, vote_count: data.total_votes } : item)),
+        )
       } else {
         const errorData = await response.json()
         toast({
           title: "Error",
-          description: errorData.error || "Failed to add vote",
+          description: errorData.error || "Failed to process vote",
           variant: "destructive",
         })
       }
@@ -204,7 +223,7 @@ export function RetrospectiveBoard() {
       console.error("Failed to vote:", error)
       toast({
         title: "Error",
-        description: "Failed to add vote",
+        description: "Failed to process vote",
         variant: "destructive",
       })
     }
@@ -235,6 +254,7 @@ export function RetrospectiveBoard() {
   const startNewRetrospective = () => {
     setFeedbackItems([])
     setCurrentRetrospective(null)
+    setVotedItems(new Set())
     timerRef.current?.resetTimer()
     initializeRetrospective()
     toast({
@@ -256,6 +276,21 @@ export function RetrospectiveBoard() {
         description: "Failed to copy URL to clipboard",
         variant: "destructive",
       })
+    }
+  }
+
+  const loadUserVotes = async () => {
+    if (!currentRetrospective) return
+
+    try {
+      const deviceId = getDeviceId()
+      const response = await fetch(`/api/votes/user?device_id=${deviceId}&retrospective_id=${currentRetrospective.id}`)
+      if (response.ok) {
+        const data = await response.json()
+        setVotedItems(new Set(data.voted_items))
+      }
+    } catch (error) {
+      console.error("Failed to load user votes:", error)
     }
   }
 
@@ -320,6 +355,7 @@ export function RetrospectiveBoard() {
             onAddFeedback={handleAddFeedback}
             onEditFeedback={handleEditFeedback}
             onVote={handleVote}
+            votedItems={votedItems}
           />
         ))}
       </div>
