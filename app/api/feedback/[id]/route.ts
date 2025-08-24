@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
+import { broadcastFeedbackEvent, createFeedbackEvent } from "@/lib/real-time-events"
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -37,6 +38,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       vote_count: Number.parseInt(voteResult[0].vote_count),
     }
 
+    const event = createFeedbackEvent("updated", feedbackItem.retrospective_id, feedbackItem)
+    broadcastFeedbackEvent(feedbackItem.retrospective_id, event)
+
     return NextResponse.json(feedbackItem)
   } catch (error) {
     console.error("Error updating feedback item:", error)
@@ -52,6 +56,18 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       return NextResponse.json({ error: "Invalid feedback ID" }, { status: 400 })
     }
 
+    const feedbackResult = await sql`
+      SELECT id, retrospective_id, category, content, author_name
+      FROM feedback_items 
+      WHERE id = ${feedbackId}
+    `
+
+    if (feedbackResult.length === 0) {
+      return NextResponse.json({ error: "Feedback item not found" }, { status: 404 })
+    }
+
+    const feedbackItem = feedbackResult[0]
+
     const result = await sql`
       DELETE FROM feedback_items 
       WHERE id = ${feedbackId}
@@ -61,6 +77,9 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     if (result.length === 0) {
       return NextResponse.json({ error: "Feedback item not found" }, { status: 404 })
     }
+
+    const event = createFeedbackEvent("deleted", feedbackItem.retrospective_id, feedbackItem)
+    broadcastFeedbackEvent(feedbackItem.retrospective_id, event)
 
     return NextResponse.json({ success: true })
   } catch (error) {
