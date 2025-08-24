@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "re
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Play, Pause, Square, Clock } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import type { TimerEvent } from "@/lib/real-time-events"
 
 const TIMER_OPTIONS = [
   { value: 1, label: "1 minute" },
@@ -14,21 +16,29 @@ const TIMER_OPTIONS = [
 
 export interface TimerControlsRef {
   resetTimer: () => void
+  handleTimerEvent: (event: TimerEvent) => void
 }
 
-export const TimerControls = forwardRef<TimerControlsRef>((props, ref) => {
+interface TimerControlsProps {
+  retrospectiveId: number | null
+}
+
+export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({ retrospectiveId }, ref) => {
   const [selectedMinutes, setSelectedMinutes] = useState<number>(5)
   const [timeLeft, setTimeLeft] = useState<number>(0)
   const [isRunning, setIsRunning] = useState(false)
+  const [isPaused, setIsPaused] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const { toast } = useToast()
 
   useEffect(() => {
-    if (isRunning && timeLeft > 0) {
+    if (isRunning && !isPaused && timeLeft > 0) {
       intervalRef.current = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
             setIsRunning(false)
-            // Timer finished - could add notification here
+            setIsPaused(false)
             return 0
           }
           return prev - 1
@@ -46,30 +56,126 @@ export const TimerControls = forwardRef<TimerControlsRef>((props, ref) => {
         clearInterval(intervalRef.current)
       }
     }
-  }, [isRunning, timeLeft])
+  }, [isRunning, isPaused, timeLeft])
+
+  useEffect(() => {
+    if (retrospectiveId) {
+      loadTimerState()
+    }
+  }, [retrospectiveId])
+
+  const loadTimerState = async () => {
+    if (!retrospectiveId) return
+
+    try {
+      const response = await fetch(`/api/retrospectives/${retrospectiveId}/timer`)
+      if (response.ok) {
+        const timerState = await response.json()
+        setTimeLeft(timerState.remaining_time)
+        setIsRunning(timerState.is_running)
+        setIsPaused(timerState.is_paused)
+        setSelectedMinutes(Math.ceil(timerState.duration / 60))
+      }
+    } catch (error) {
+      console.error("Failed to load timer state:", error)
+    }
+  }
+
+  const performTimerAction = async (action: string, duration?: number) => {
+    if (!retrospectiveId) return
+
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/retrospectives/${retrospectiveId}/timer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, duration }),
+      })
+
+      if (response.ok) {
+        const timerState = await response.json()
+        setTimeLeft(timerState.remaining_time)
+        setIsRunning(timerState.is_running)
+        setIsPaused(timerState.is_paused)
+
+        toast({
+          title: "Success",
+          description: `Timer ${action}ed successfully`,
+        })
+      } else {
+        const error = await response.json()
+        toast({
+          title: "Error",
+          description: error.error || `Failed to ${action} timer`,
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error(`Failed to ${action} timer:`, error)
+      toast({
+        title: "Error",
+        description: `Failed to ${action} timer`,
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const startTimer = () => {
-    setTimeLeft(selectedMinutes * 60)
-    setIsRunning(true)
+    performTimerAction("start", selectedMinutes * 60)
   }
 
   const pauseTimer = () => {
-    setIsRunning(false)
+    performTimerAction("pause")
+  }
+
+  const resumeTimer = () => {
+    performTimerAction("resume")
   }
 
   const stopTimer = () => {
-    setIsRunning(false)
-    setTimeLeft(0)
+    performTimerAction("stop")
   }
 
   const resetTimer = () => {
     setIsRunning(false)
+    setIsPaused(false)
     setTimeLeft(0)
-    setSelectedMinutes(5) // Reset to default 5 minutes
+    setSelectedMinutes(5)
+    if (retrospectiveId) {
+      performTimerAction("stop")
+    }
+  }
+
+  const handleTimerEvent = (event: TimerEvent) => {
+    console.log("[TIMER] Received event:", event.type, event.data)
+
+    setTimeLeft(event.data.remaining_time)
+    setIsRunning(event.data.is_running)
+    setIsPaused(event.data.is_paused)
+
+    if (event.data.duration > 0) {
+      setSelectedMinutes(Math.ceil(event.data.duration / 60))
+    }
+
+    // Show notification for timer events from other users
+    if (event.type === "timer_start") {
+      toast({
+        title: "Timer Started",
+        description: `Timer started by another user (${Math.ceil(event.data.duration / 60)} minutes)`,
+      })
+    } else if (event.type === "timer_stop") {
+      toast({
+        title: "Timer Stopped",
+        description: "Timer stopped by another user",
+      })
+    }
   }
 
   useImperativeHandle(ref, () => ({
     resetTimer,
+    handleTimerEvent,
   }))
 
   const formatTime = (seconds: number) => {
@@ -85,6 +191,7 @@ export const TimerControls = forwardRef<TimerControlsRef>((props, ref) => {
         <Select
           value={selectedMinutes.toString()}
           onValueChange={(value) => setSelectedMinutes(Number.parseInt(value))}
+          disabled={isRunning || isLoading}
         >
           <SelectTrigger className="w-32">
             <SelectValue />
@@ -101,27 +208,27 @@ export const TimerControls = forwardRef<TimerControlsRef>((props, ref) => {
 
       <div className="flex items-center gap-2">
         {timeLeft === 0 ? (
-          <Button onClick={startTimer} size="sm">
+          <Button onClick={startTimer} size="sm" disabled={isLoading || !retrospectiveId}>
             <Play className="w-4 h-4 mr-2" />
-            Start Timer
+            {isLoading ? "Starting..." : "Start Timer"}
           </Button>
         ) : (
           <>
             <div className="text-lg font-mono font-semibold text-slate-700 min-w-[60px]">{formatTime(timeLeft)}</div>
-            {isRunning ? (
-              <Button onClick={pauseTimer} size="sm" variant="outline">
+            {isRunning && !isPaused ? (
+              <Button onClick={pauseTimer} size="sm" variant="outline" disabled={isLoading}>
                 <Pause className="w-4 h-4 mr-2" />
-                Pause
+                {isLoading ? "Pausing..." : "Pause"}
               </Button>
             ) : (
-              <Button onClick={() => setIsRunning(true)} size="sm">
+              <Button onClick={resumeTimer} size="sm" disabled={isLoading}>
                 <Play className="w-4 h-4 mr-2" />
-                Resume
+                {isLoading ? "Resuming..." : "Resume"}
               </Button>
             )}
-            <Button onClick={stopTimer} size="sm" variant="outline">
+            <Button onClick={stopTimer} size="sm" variant="outline" disabled={isLoading}>
               <Square className="w-4 h-4 mr-2" />
-              Stop
+              {isLoading ? "Stopping..." : "Stop"}
             </Button>
           </>
         )}
