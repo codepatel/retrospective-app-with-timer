@@ -32,17 +32,35 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: "Invalid retrospective ID" }, { status: 400 })
     }
 
-    const result = await sql`
-      SELECT 
-        id,
-        timer_duration,
-        timer_start_time,
-        timer_is_running,
-        timer_is_paused,
-        timer_controlled_by
-      FROM retrospectives 
-      WHERE id = ${retrospectiveId} AND is_active = true
-    `
+    let result
+    try {
+      result = await sql`
+        SELECT 
+          id,
+          timer_duration,
+          timer_start_time,
+          timer_is_running,
+          timer_is_paused,
+          timer_controlled_by
+        FROM retrospectives 
+        WHERE id = ${retrospectiveId} AND is_active = true
+      `
+    } catch (columnError) {
+      // Fallback query without timer_controlled_by column
+      console.log("[v0] timer_controlled_by column not found, using fallback query")
+      result = await sql`
+        SELECT 
+          id,
+          timer_duration,
+          timer_start_time,
+          timer_is_running,
+          timer_is_paused
+        FROM retrospectives 
+        WHERE id = ${retrospectiveId} AND is_active = true
+      `
+      // Add null controlled_by to each result
+      result = result.map((row) => ({ ...row, timer_controlled_by: null }))
+    }
 
     if (result.length === 0) {
       return NextResponse.json({ error: "Retrospective not found" }, { status: 404 })
@@ -59,11 +77,20 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
       // If timer has expired, update database
       if (remainingTime === 0) {
-        await sql`
-          UPDATE retrospectives 
-          SET timer_is_running = false, timer_is_paused = false, timer_controlled_by = NULL
-          WHERE id = ${retrospectiveId}
-        `
+        try {
+          await sql`
+            UPDATE retrospectives 
+            SET timer_is_running = false, timer_is_paused = false, timer_controlled_by = NULL
+            WHERE id = ${retrospectiveId}
+          `
+        } catch (updateError) {
+          // Fallback update without timer_controlled_by
+          await sql`
+            UPDATE retrospectives 
+            SET timer_is_running = false, timer_is_paused = false
+            WHERE id = ${retrospectiveId}
+          `
+        }
         // Clear server-side timer
         if (activeTimers.has(retrospectiveId)) {
           clearTimeout(activeTimers.get(retrospectiveId)!)
@@ -106,11 +133,22 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: "Invalid retrospective ID" }, { status: 400 })
     }
 
-    // Verify retrospective exists and get current control state
-    const retrospectiveCheck = await sql`
-      SELECT id, timer_controlled_by, timer_is_running FROM retrospectives 
-      WHERE id = ${retrospectiveId} AND is_active = true
-    `
+    let retrospectiveCheck
+    try {
+      retrospectiveCheck = await sql`
+        SELECT id, timer_controlled_by, timer_is_running FROM retrospectives 
+        WHERE id = ${retrospectiveId} AND is_active = true
+      `
+    } catch (columnError) {
+      // Fallback query without timer_controlled_by column
+      console.log("[v0] timer_controlled_by column not found in POST, using fallback")
+      retrospectiveCheck = await sql`
+        SELECT id, timer_is_running FROM retrospectives 
+        WHERE id = ${retrospectiveId} AND is_active = true
+      `
+      // Add null controlled_by to each result
+      retrospectiveCheck = retrospectiveCheck.map((row) => ({ ...row, timer_controlled_by: null }))
+    }
 
     if (retrospectiveCheck.length === 0) {
       return NextResponse.json({ error: "Retrospective not found" }, { status: 404 })
@@ -119,7 +157,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const currentControlledBy = retrospectiveCheck[0].timer_controlled_by
     const isCurrentlyRunning = retrospectiveCheck[0].timer_is_running
 
-    if (action !== "start" && currentControlledBy && currentControlledBy !== deviceId) {
+    if (currentControlledBy && action !== "start" && currentControlledBy !== deviceId) {
       return NextResponse.json(
         {
           error: "Timer is controlled by another client",
@@ -139,22 +177,43 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       )
     }
 
+    const safeTimerUpdate = async (updateFields: Record<string, any>, whereClause = "") => {
+      try {
+        const setClause = Object.entries(updateFields)
+          .map(([key, value]) => `${key} = ${typeof value === "string" ? `'${value}'` : value}`)
+          .join(", ")
+
+        const query = `UPDATE retrospectives SET ${setClause} WHERE id = ${retrospectiveId}${whereClause}`
+        await sql.unsafe(query)
+      } catch (controlledByError) {
+        // Fallback: update without timer_controlled_by
+        const fallbackFields = { ...updateFields }
+        delete fallbackFields.timer_controlled_by
+
+        if (Object.keys(fallbackFields).length > 0) {
+          const setClause = Object.entries(fallbackFields)
+            .map(([key, value]) => `${key} = ${typeof value === "string" ? `'${value}'` : value}`)
+            .join(", ")
+
+          const query = `UPDATE retrospectives SET ${setClause} WHERE id = ${retrospectiveId}${whereClause}`
+          await sql.unsafe(query)
+        }
+      }
+    }
+
     switch (action) {
       case "start":
         if (!duration || duration <= 0) {
           return NextResponse.json({ error: "Valid duration required" }, { status: 400 })
         }
 
-        await sql`
-          UPDATE retrospectives 
-          SET 
-            timer_duration = ${duration},
-            timer_start_time = NOW(),
-            timer_is_running = true,
-            timer_is_paused = false,
-            timer_controlled_by = ${deviceId}
-          WHERE id = ${retrospectiveId}
-        `
+        await safeTimerUpdate({
+          timer_duration: duration,
+          timer_start_time: "NOW()",
+          timer_is_running: true,
+          timer_is_paused: false,
+          timer_controlled_by: `'${deviceId}'`,
+        })
 
         // Set server-side timer to auto-stop when duration expires
         if (activeTimers.has(retrospectiveId)) {
@@ -184,11 +243,12 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         break
 
       case "pause":
-        await sql`
-          UPDATE retrospectives 
-          SET timer_is_paused = true
-          WHERE id = ${retrospectiveId} AND timer_is_running = true AND timer_controlled_by = ${deviceId}
-        `
+        await safeTimerUpdate(
+          {
+            timer_is_paused: true,
+          },
+          ` AND timer_is_running = true`,
+        )
 
         // Clear server-side timer
         if (activeTimers.has(retrospectiveId)) {
@@ -246,15 +306,12 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         break
 
       case "stop":
-        await sql`
-          UPDATE retrospectives 
-          SET 
-            timer_is_running = false,
-            timer_is_paused = false,
-            timer_start_time = NULL,
-            timer_controlled_by = NULL
-          WHERE id = ${retrospectiveId} AND timer_controlled_by = ${deviceId}
-        `
+        await safeTimerUpdate({
+          timer_is_running: false,
+          timer_is_paused: false,
+          timer_start_time: "NULL",
+          timer_controlled_by: "NULL",
+        })
 
         // Clear server-side timer
         if (activeTimers.has(retrospectiveId)) {
@@ -268,29 +325,47 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           return NextResponse.json({ error: "Valid duration required" }, { status: 400 })
         }
 
-        await sql`
-          UPDATE retrospectives 
-          SET timer_duration = ${duration}
-          WHERE id = ${retrospectiveId}
-        `
+        await safeTimerUpdate({
+          timer_duration: duration,
+        })
         break
 
       default:
         return NextResponse.json({ error: "Invalid action" }, { status: 400 })
     }
 
-    // Return updated timer state
-    const updatedResult = await sql`
-      SELECT 
-        id,
-        timer_duration,
-        timer_start_time,
-        timer_is_running,
-        timer_is_paused,
-        timer_controlled_by
-      FROM retrospectives 
-      WHERE id = ${retrospectiveId}
-    `
+    let updatedResult
+    try {
+      updatedResult = await sql`
+        SELECT 
+          id,
+          timer_duration,
+          timer_start_time,
+          timer_is_running,
+          timer_is_paused,
+          timer_controlled_by
+        FROM retrospectives 
+        WHERE id = ${retrospectiveId}
+      `
+    } catch (columnError) {
+      // Fallback query without timer_controlled_by column
+      updatedResult = await sql`
+        SELECT 
+          id,
+          timer_duration,
+          timer_start_time,
+          timer_is_running,
+          timer_is_paused
+        FROM retrospectives 
+        WHERE id = ${retrospectiveId}
+      `
+      // Add null controlled_by to each result
+      updatedResult = updatedResult.map((row) => ({ ...row, timer_controlled_by: null }))
+    }
+
+    if (updatedResult.length === 0) {
+      return NextResponse.json({ error: "Retrospective not found" }, { status: 404 })
+    }
 
     const retrospective = updatedResult[0]
     let remainingTime = 0
