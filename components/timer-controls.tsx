@@ -24,7 +24,7 @@ interface TimerControlsProps {
 }
 
 export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({ retrospectiveId }, ref) => {
-  const [selectedMinutes, setSelectedMinutes] = useState<number>(5)
+  const [selectedMinutes, setSelectedMinutes] = useState<number>(10)
   const [timeLeft, setTimeLeft] = useState<number>(0)
   const [isRunning, setIsRunning] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
@@ -164,7 +164,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
     setIsRunning(false)
     setIsPaused(false)
     setTimeLeft(0)
-    setSelectedMinutes(5)
+    setSelectedMinutes(10)
     setControlledBy(null)
     if (retrospectiveId) {
       performTimerAction("stop")
@@ -254,7 +254,12 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
           <>
             <div className="text-lg font-mono font-semibold text-slate-700 min-w-[60px]">{formatTime(timeLeft)}</div>
             {isRunning && !isPaused ? (
-              <Button onClick={pauseTimer} size="sm" variant="outline" disabled={isLoading || isControlledByOther}>
+              <Button
+                onClick={pauseTimer}
+                size="sm"
+                variant="outline"
+                disabled={isLoading || (!hasControl && isControlledByOther)}
+              >
                 <Pause className="w-4 h-4 mr-2" />
                 {isLoading ? "Pausing..." : "Pause"}
               </Button>
@@ -264,7 +269,12 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
                 {isLoading ? "Resuming..." : "Resume"}
               </Button>
             )}
-            <Button onClick={stopTimer} size="sm" variant="outline" disabled={isLoading || isControlledByOther}>
+            <Button
+              onClick={stopTimer}
+              size="sm"
+              variant="outline"
+              disabled={isLoading || (!hasControl && isControlledByOther)}
+            >
               <Square className="w-4 h-4 mr-2" />
               {isLoading ? "Stopping..." : "Stop"}
             </Button>
