@@ -201,6 +201,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       }
     }
 
+    let timerState: TimerState
+
     switch (action) {
       case "start":
         if (!duration || duration <= 0) {
@@ -229,17 +231,27 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           activeTimers.delete(retrospectiveId)
           broadcastTimerEvent(
             retrospectiveId,
-            createTimerEvent("timer_stop", {
+            createTimerEvent("timer_stop", retrospectiveId, {
               duration: 0,
               remaining_time: 0,
               is_running: false,
               is_paused: false,
-              controlled_by: null,
+              start_time: null,
             }),
           )
         }, duration * 1000)
 
         activeTimers.set(retrospectiveId, timeout)
+        timerState = {
+          id: retrospectiveId,
+          duration: duration,
+          start_time: new Date().toISOString(),
+          is_running: true,
+          is_paused: false,
+          remaining_time: duration,
+          controlled_by: deviceId,
+        }
+        broadcastTimerEvent(retrospectiveId, createTimerEvent("timer_start", retrospectiveId, timerState))
         break
 
       case "pause":
@@ -255,6 +267,20 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           clearTimeout(activeTimers.get(retrospectiveId)!)
           activeTimers.delete(retrospectiveId)
         }
+
+        const pauseResult = await sql`
+          SELECT 
+            id,
+            timer_duration,
+            timer_start_time,
+            timer_is_running,
+            timer_is_paused,
+            timer_controlled_by
+          FROM retrospectives 
+          WHERE id = ${retrospectiveId}
+        `
+        timerState = pauseResult[0]
+        broadcastTimerEvent(retrospectiveId, createTimerEvent("timer_pause", retrospectiveId, timerState))
         break
 
       case "resume":
@@ -290,17 +316,27 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
               activeTimers.delete(retrospectiveId)
               broadcastTimerEvent(
                 retrospectiveId,
-                createTimerEvent("timer_stop", {
+                createTimerEvent("timer_stop", retrospectiveId, {
                   duration: 0,
                   remaining_time: 0,
                   is_running: false,
                   is_paused: false,
-                  controlled_by: null,
+                  start_time: null,
                 }),
               )
             }, remaining * 1000)
 
             activeTimers.set(retrospectiveId, timeout)
+            timerState = {
+              id: retrospectiveId,
+              duration: currentState[0].timer_duration,
+              start_time: new Date().toISOString(),
+              is_running: true,
+              is_paused: false,
+              remaining_time: remaining,
+              controlled_by: deviceId,
+            }
+            broadcastTimerEvent(retrospectiveId, createTimerEvent("timer_resume", retrospectiveId, timerState))
           }
         }
         break
@@ -318,6 +354,20 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           clearTimeout(activeTimers.get(retrospectiveId)!)
           activeTimers.delete(retrospectiveId)
         }
+
+        const stopResult = await sql`
+          SELECT 
+            id,
+            timer_duration,
+            timer_start_time,
+            timer_is_running,
+            timer_is_paused,
+            timer_controlled_by
+          FROM retrospectives 
+          WHERE id = ${retrospectiveId}
+        `
+        timerState = stopResult[0]
+        broadcastTimerEvent(retrospectiveId, createTimerEvent("timer_stop", retrospectiveId, timerState))
         break
 
       case "set_duration":
@@ -328,89 +378,24 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         await safeTimerUpdate({
           timer_duration: duration,
         })
+
+        const setDurationResult = await sql`
+          SELECT 
+            id,
+            timer_duration,
+            timer_start_time,
+            timer_is_running,
+            timer_is_paused,
+            timer_controlled_by
+          FROM retrospectives 
+          WHERE id = ${retrospectiveId}
+        `
+        timerState = setDurationResult[0]
         break
 
       default:
         return NextResponse.json({ error: "Invalid action" }, { status: 400 })
     }
-
-    let updatedResult
-    try {
-      updatedResult = await sql`
-        SELECT 
-          id,
-          timer_duration,
-          timer_start_time,
-          timer_is_running,
-          timer_is_paused,
-          timer_controlled_by
-        FROM retrospectives 
-        WHERE id = ${retrospectiveId}
-      `
-    } catch (columnError) {
-      // Fallback query without timer_controlled_by column
-      updatedResult = await sql`
-        SELECT 
-          id,
-          timer_duration,
-          timer_start_time,
-          timer_is_running,
-          timer_is_paused
-        FROM retrospectives 
-        WHERE id = ${retrospectiveId}
-      `
-      // Add null controlled_by to each result
-      updatedResult = updatedResult.map((row) => ({ ...row, timer_controlled_by: null }))
-    }
-
-    if (updatedResult.length === 0) {
-      return NextResponse.json({ error: "Retrospective not found" }, { status: 404 })
-    }
-
-    const retrospective = updatedResult[0]
-    let remainingTime = 0
-
-    if (retrospective.timer_is_running && retrospective.timer_start_time && !retrospective.timer_is_paused) {
-      const startTime = new Date(retrospective.timer_start_time)
-      const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000)
-      remainingTime = Math.max(0, retrospective.timer_duration - elapsed)
-    } else if (retrospective.timer_is_paused && retrospective.timer_start_time) {
-      const startTime = new Date(retrospective.timer_start_time)
-      const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000)
-      remainingTime = Math.max(0, retrospective.timer_duration - elapsed)
-    } else {
-      remainingTime = retrospective.timer_duration || 0
-    }
-
-    const timerState: TimerState = {
-      id: retrospective.id,
-      duration: retrospective.timer_duration || 0,
-      start_time: retrospective.timer_start_time,
-      is_running: retrospective.timer_is_running || false,
-      is_paused: retrospective.timer_is_paused || false,
-      remaining_time: remainingTime,
-      controlled_by: retrospective.timer_controlled_by,
-    }
-
-    const eventType =
-      action === "start"
-        ? "timer_start"
-        : action === "stop"
-          ? "timer_stop"
-          : action === "pause"
-            ? "timer_pause"
-            : "timer_resume"
-
-    broadcastTimerEvent(
-      retrospectiveId,
-      createTimerEvent(eventType, {
-        duration: timerState.duration,
-        remaining_time: timerState.remaining_time,
-        is_running: timerState.is_running,
-        is_paused: timerState.is_paused,
-        controlled_by: timerState.controlled_by,
-      }),
-    )
 
     return NextResponse.json(timerState)
   } catch (error) {
