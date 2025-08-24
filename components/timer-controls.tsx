@@ -217,11 +217,14 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         <Clock className="w-4 h-4 text-slate-600" />
         <Select
           value={selectedMinutes.toString()}
+          defaultValue="10"
           onValueChange={(value) => setSelectedMinutes(Number.parseInt(value))}
           disabled={isRunning || isLoading}
         >
           <SelectTrigger className="w-32">
-            <SelectValue placeholder="10 minutes" />
+            <SelectValue>
+              {TIMER_OPTIONS.find((option) => option.value === selectedMinutes)?.label || "10 minutes"}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {TIMER_OPTIONS.map((option) => (
