@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Play, Pause, Square, Clock } from "lucide-react"
+import { Play, Pause, Square, Clock, Lock } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { TimerEvent } from "@/lib/real-time-events"
 
@@ -29,8 +29,19 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
   const [isRunning, setIsRunning] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [controlledBy, setControlledBy] = useState<string | null>(null)
+  const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const { toast } = useToast()
+
+  useEffect(() => {
+    const generateDeviceId = () => {
+      const userAgent = navigator.userAgent || ""
+      const timestamp = Date.now()
+      return `${userAgent.slice(0, 50)}-${timestamp}`.replace(/[^a-zA-Z0-9-]/g, "").slice(0, 100)
+    }
+    setCurrentDeviceId(generateDeviceId())
+  }, [])
 
   useEffect(() => {
     if (isRunning && !isPaused && timeLeft > 0) {
@@ -39,6 +50,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
           if (prev <= 1) {
             setIsRunning(false)
             setIsPaused(false)
+            setControlledBy(null)
             return 0
           }
           return prev - 1
@@ -75,6 +87,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         setIsRunning(timerState.is_running)
         setIsPaused(timerState.is_paused)
         setSelectedMinutes(Math.ceil(timerState.duration / 60))
+        setControlledBy(timerState.controlled_by)
       }
     } catch (error) {
       console.error("Failed to load timer state:", error)
@@ -97,6 +110,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         setTimeLeft(timerState.remaining_time)
         setIsRunning(timerState.is_running)
         setIsPaused(timerState.is_paused)
+        setControlledBy(timerState.controlled_by)
 
         toast({
           title: "Success",
@@ -104,11 +118,19 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         })
       } else {
         const error = await response.json()
-        toast({
-          title: "Error",
-          description: error.error || `Failed to ${action} timer`,
-          variant: "destructive",
-        })
+        if (response.status === 403) {
+          toast({
+            title: "Timer Locked",
+            description: "Another user is controlling the timer",
+            variant: "destructive",
+          })
+        } else {
+          toast({
+            title: "Error",
+            description: error.error || `Failed to ${action} timer`,
+            variant: "destructive",
+          })
+        }
       }
     } catch (error) {
       console.error(`Failed to ${action} timer:`, error)
@@ -143,6 +165,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
     setIsPaused(false)
     setTimeLeft(0)
     setSelectedMinutes(5)
+    setControlledBy(null)
     if (retrospectiveId) {
       performTimerAction("stop")
     }
@@ -154,6 +177,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
     setTimeLeft(event.data.remaining_time)
     setIsRunning(event.data.is_running)
     setIsPaused(event.data.is_paused)
+    setControlledBy(event.data.controlled_by)
 
     if (event.data.duration > 0) {
       setSelectedMinutes(Math.ceil(event.data.duration / 60))
@@ -184,6 +208,9 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
   }
 
+  const isControlledByOther = controlledBy && controlledBy !== currentDeviceId
+  const hasControl = controlledBy === currentDeviceId
+
   return (
     <div className="flex items-center gap-4">
       <div className="flex items-center gap-2">
@@ -207,8 +234,19 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
       </div>
 
       <div className="flex items-center gap-2">
+        {isControlledByOther && (
+          <div className="flex items-center gap-1 text-amber-600 text-sm">
+            <Lock className="w-3 h-3" />
+            <span>Locked</span>
+          </div>
+        )}
+
         {timeLeft === 0 ? (
-          <Button onClick={startTimer} size="sm" disabled={isLoading || !retrospectiveId}>
+          <Button
+            onClick={startTimer}
+            size="sm"
+            disabled={isLoading || !retrospectiveId || (isRunning && isControlledByOther)}
+          >
             <Play className="w-4 h-4 mr-2" />
             {isLoading ? "Starting..." : "Start Timer"}
           </Button>
@@ -216,17 +254,17 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
           <>
             <div className="text-lg font-mono font-semibold text-slate-700 min-w-[60px]">{formatTime(timeLeft)}</div>
             {isRunning && !isPaused ? (
-              <Button onClick={pauseTimer} size="sm" variant="outline" disabled={isLoading}>
+              <Button onClick={pauseTimer} size="sm" variant="outline" disabled={isLoading || isControlledByOther}>
                 <Pause className="w-4 h-4 mr-2" />
                 {isLoading ? "Pausing..." : "Pause"}
               </Button>
             ) : (
-              <Button onClick={resumeTimer} size="sm" disabled={isLoading}>
+              <Button onClick={resumeTimer} size="sm" disabled={isLoading || isControlledByOther}>
                 <Play className="w-4 h-4 mr-2" />
                 {isLoading ? "Resuming..." : "Resume"}
               </Button>
             )}
-            <Button onClick={stopTimer} size="sm" variant="outline" disabled={isLoading}>
+            <Button onClick={stopTimer} size="sm" variant="outline" disabled={isLoading || isControlledByOther}>
               <Square className="w-4 h-4 mr-2" />
               {isLoading ? "Stopping..." : "Stop"}
             </Button>

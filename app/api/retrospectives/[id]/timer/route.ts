@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { neon } from "@neondatabase/serverless"
+import { broadcastTimerEvent, createTimerEvent } from "@/lib/real-time-events"
 
 const sql = neon(process.env.DATABASE_URL!)
 
@@ -13,6 +14,14 @@ interface TimerState {
   is_running: boolean
   is_paused: boolean
   remaining_time: number
+  controlled_by: string | null
+}
+
+function getDeviceId(request: NextRequest): string {
+  const userAgent = request.headers.get("user-agent") || ""
+  const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown"
+  const timestamp = Date.now()
+  return `${ip}-${userAgent.slice(0, 50)}-${timestamp}`.replace(/[^a-zA-Z0-9-]/g, "").slice(0, 100)
 }
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
@@ -23,14 +32,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: "Invalid retrospective ID" }, { status: 400 })
     }
 
-    // Get timer state from database
     const result = await sql`
       SELECT 
         id,
         timer_duration,
         timer_start_time,
         timer_is_running,
-        timer_is_paused
+        timer_is_paused,
+        timer_controlled_by
       FROM retrospectives 
       WHERE id = ${retrospectiveId} AND is_active = true
     `
@@ -52,7 +61,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       if (remainingTime === 0) {
         await sql`
           UPDATE retrospectives 
-          SET timer_is_running = false, timer_is_paused = false
+          SET timer_is_running = false, timer_is_paused = false, timer_controlled_by = NULL
           WHERE id = ${retrospectiveId}
         `
         // Clear server-side timer
@@ -77,6 +86,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       is_running: retrospective.timer_is_running || false,
       is_paused: retrospective.timer_is_paused || false,
       remaining_time: remainingTime,
+      controlled_by: retrospective.timer_controlled_by,
     }
 
     return NextResponse.json(timerState)
@@ -90,18 +100,43 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   try {
     const retrospectiveId = Number.parseInt(params.id)
     const { action, duration } = await request.json()
+    const deviceId = getDeviceId(request)
 
     if (isNaN(retrospectiveId)) {
       return NextResponse.json({ error: "Invalid retrospective ID" }, { status: 400 })
     }
 
-    // Verify retrospective exists
+    // Verify retrospective exists and get current control state
     const retrospectiveCheck = await sql`
-      SELECT id FROM retrospectives WHERE id = ${retrospectiveId} AND is_active = true
+      SELECT id, timer_controlled_by, timer_is_running FROM retrospectives 
+      WHERE id = ${retrospectiveId} AND is_active = true
     `
 
     if (retrospectiveCheck.length === 0) {
       return NextResponse.json({ error: "Retrospective not found" }, { status: 404 })
+    }
+
+    const currentControlledBy = retrospectiveCheck[0].timer_controlled_by
+    const isCurrentlyRunning = retrospectiveCheck[0].timer_is_running
+
+    if (action !== "start" && currentControlledBy && currentControlledBy !== deviceId) {
+      return NextResponse.json(
+        {
+          error: "Timer is controlled by another client",
+          controlled_by: currentControlledBy,
+        },
+        { status: 403 },
+      )
+    }
+
+    if (action === "start" && isCurrentlyRunning && currentControlledBy && currentControlledBy !== deviceId) {
+      return NextResponse.json(
+        {
+          error: "Timer is already running and controlled by another client",
+          controlled_by: currentControlledBy,
+        },
+        { status: 403 },
+      )
     }
 
     switch (action) {
@@ -110,14 +145,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           return NextResponse.json({ error: "Valid duration required" }, { status: 400 })
         }
 
-        // Start timer
         await sql`
           UPDATE retrospectives 
           SET 
             timer_duration = ${duration},
             timer_start_time = NOW(),
             timer_is_running = true,
-            timer_is_paused = false
+            timer_is_paused = false,
+            timer_controlled_by = ${deviceId}
           WHERE id = ${retrospectiveId}
         `
 
@@ -129,10 +164,20 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         const timeout = setTimeout(async () => {
           await sql`
             UPDATE retrospectives 
-            SET timer_is_running = false, timer_is_paused = false
+            SET timer_is_running = false, timer_is_paused = false, timer_controlled_by = NULL
             WHERE id = ${retrospectiveId}
           `
           activeTimers.delete(retrospectiveId)
+          broadcastTimerEvent(
+            retrospectiveId,
+            createTimerEvent("timer_stop", {
+              duration: 0,
+              remaining_time: 0,
+              is_running: false,
+              is_paused: false,
+              controlled_by: null,
+            }),
+          )
         }, duration * 1000)
 
         activeTimers.set(retrospectiveId, timeout)
@@ -142,7 +187,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         await sql`
           UPDATE retrospectives 
           SET timer_is_paused = true
-          WHERE id = ${retrospectiveId} AND timer_is_running = true
+          WHERE id = ${retrospectiveId} AND timer_is_running = true AND timer_controlled_by = ${deviceId}
         `
 
         // Clear server-side timer
@@ -157,7 +202,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         const currentState = await sql`
           SELECT timer_duration, timer_start_time 
           FROM retrospectives 
-          WHERE id = ${retrospectiveId}
+          WHERE id = ${retrospectiveId} AND timer_controlled_by = ${deviceId}
         `
 
         if (currentState.length > 0) {
@@ -172,17 +217,27 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
                 timer_start_time = NOW() - make_interval(secs => ${elapsed}),
                 timer_is_running = true,
                 timer_is_paused = false
-              WHERE id = ${retrospectiveId}
+              WHERE id = ${retrospectiveId} AND timer_controlled_by = ${deviceId}
             `
 
             // Set server-side timer for remaining time
             const timeout = setTimeout(async () => {
               await sql`
                 UPDATE retrospectives 
-                SET timer_is_running = false, timer_is_paused = false
+                SET timer_is_running = false, timer_is_paused = false, timer_controlled_by = NULL
                 WHERE id = ${retrospectiveId}
               `
               activeTimers.delete(retrospectiveId)
+              broadcastTimerEvent(
+                retrospectiveId,
+                createTimerEvent("timer_stop", {
+                  duration: 0,
+                  remaining_time: 0,
+                  is_running: false,
+                  is_paused: false,
+                  controlled_by: null,
+                }),
+              )
             }, remaining * 1000)
 
             activeTimers.set(retrospectiveId, timeout)
@@ -196,8 +251,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           SET 
             timer_is_running = false,
             timer_is_paused = false,
-            timer_start_time = NULL
-          WHERE id = ${retrospectiveId}
+            timer_start_time = NULL,
+            timer_controlled_by = NULL
+          WHERE id = ${retrospectiveId} AND timer_controlled_by = ${deviceId}
         `
 
         // Clear server-side timer
@@ -230,7 +286,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         timer_duration,
         timer_start_time,
         timer_is_running,
-        timer_is_paused
+        timer_is_paused,
+        timer_controlled_by
       FROM retrospectives 
       WHERE id = ${retrospectiveId}
     `
@@ -257,7 +314,28 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       is_running: retrospective.timer_is_running || false,
       is_paused: retrospective.timer_is_paused || false,
       remaining_time: remainingTime,
+      controlled_by: retrospective.timer_controlled_by,
     }
+
+    const eventType =
+      action === "start"
+        ? "timer_start"
+        : action === "stop"
+          ? "timer_stop"
+          : action === "pause"
+            ? "timer_pause"
+            : "timer_resume"
+
+    broadcastTimerEvent(
+      retrospectiveId,
+      createTimerEvent(eventType, {
+        duration: timerState.duration,
+        remaining_time: timerState.remaining_time,
+        is_running: timerState.is_running,
+        is_paused: timerState.is_paused,
+        controlled_by: timerState.controlled_by,
+      }),
+    )
 
     return NextResponse.json(timerState)
   } catch (error) {
