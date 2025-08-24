@@ -208,8 +208,8 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
   }
 
+  const hasControl = !controlledBy || controlledBy === currentDeviceId
   const isControlledByOther = controlledBy && controlledBy !== currentDeviceId
-  const hasControl = controlledBy === currentDeviceId
 
   return (
     <div className="flex items-center gap-4">
@@ -242,11 +242,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         )}
 
         {timeLeft === 0 ? (
-          <Button
-            onClick={startTimer}
-            size="sm"
-            disabled={isLoading || !retrospectiveId || (isRunning && isControlledByOther)}
-          >
+          <Button onClick={startTimer} size="sm" disabled={isLoading || !retrospectiveId || isControlledByOther}>
             <Play className="w-4 h-4 mr-2" />
             {isLoading ? "Starting..." : "Start Timer"}
           </Button>
@@ -254,12 +250,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
           <>
             <div className="text-lg font-mono font-semibold text-slate-700 min-w-[60px]">{formatTime(timeLeft)}</div>
             {isRunning && !isPaused ? (
-              <Button
-                onClick={pauseTimer}
-                size="sm"
-                variant="outline"
-                disabled={isLoading || (!hasControl && isControlledByOther)}
-              >
+              <Button onClick={pauseTimer} size="sm" variant="outline" disabled={isLoading || isControlledByOther}>
                 <Pause className="w-4 h-4 mr-2" />
                 {isLoading ? "Pausing..." : "Pause"}
               </Button>
@@ -269,12 +260,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
                 {isLoading ? "Resuming..." : "Resume"}
               </Button>
             )}
-            <Button
-              onClick={stopTimer}
-              size="sm"
-              variant="outline"
-              disabled={isLoading || (!hasControl && isControlledByOther)}
-            >
+            <Button onClick={stopTimer} size="sm" variant="outline" disabled={isLoading || isControlledByOther}>
               <Square className="w-4 h-4 mr-2" />
               {isLoading ? "Stopping..." : "Stop"}
             </Button>
