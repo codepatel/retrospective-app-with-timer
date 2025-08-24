@@ -174,6 +174,11 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
   const handleTimerEvent = (event: TimerEvent) => {
     console.log("[TIMER] Received event:", event.type, event.data)
 
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+
     setTimeLeft(event.data.remaining_time)
     setIsRunning(event.data.is_running)
     setIsPaused(event.data.is_paused)
