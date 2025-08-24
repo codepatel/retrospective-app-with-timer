@@ -221,7 +221,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
           disabled={isRunning || isLoading}
         >
           <SelectTrigger className="w-32">
-            <SelectValue />
+            <SelectValue placeholder="10 minutes" />
           </SelectTrigger>
           <SelectContent>
             {TIMER_OPTIONS.map((option) => (
