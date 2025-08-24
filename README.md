@@ -18,9 +18,9 @@ Your project is live at:
 
 ## Build your app
 
-Continue building your app on:
+Continue building your own app by "forking" on the v0.app Community template below -or- fork this repo for latest updates:
 
-**[https://v0.app/chat/projects/pUHW9m6zymb](https://v0.app/chat/projects/pUHW9m6zymb)**
+**[https://v0.app/community/agile-team-retrospective-CJjWbKhpQss](https://v0.app/community/agile-team-retrospective-CJjWbKhpQss)**
 
 ## How It Works
 
