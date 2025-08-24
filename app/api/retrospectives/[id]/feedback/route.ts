@@ -22,7 +22,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         GROUP BY feedback_item_id
       ) v ON fi.id = v.feedback_item_id
       WHERE fi.retrospective_id = ${retrospectiveId}
-      ORDER BY fi.created_at ASC
+      ORDER BY COALESCE(v.vote_count, 0) DESC, fi.created_at ASC
     `
 
     return NextResponse.json(result)
