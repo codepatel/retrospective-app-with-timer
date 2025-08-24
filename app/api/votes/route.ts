@@ -19,7 +19,21 @@ export async function POST(request: NextRequest) {
     `
 
     if (existingVote.length > 0) {
-      return NextResponse.json({ error: "You have already voted for this item" }, { status: 409 })
+      // Remove existing vote
+      await sql`
+        DELETE FROM votes 
+        WHERE feedback_item_id = ${feedback_item_id} AND device_id = ${device_id}
+      `
+
+      // Get updated vote count
+      const voteCount = await sql`
+        SELECT COUNT(*) as count FROM votes WHERE feedback_item_id = ${feedback_item_id}
+      `
+
+      return NextResponse.json({
+        action: "removed",
+        total_votes: Number.parseInt(voteCount[0].count),
+      })
     }
 
     // Verify the feedback item exists
@@ -43,6 +57,7 @@ export async function POST(request: NextRequest) {
     `
 
     return NextResponse.json({
+      action: "added",
       vote: result[0],
       total_votes: Number.parseInt(voteCount[0].count),
     })

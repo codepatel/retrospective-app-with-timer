@@ -23,6 +23,7 @@ interface FeedbackColumnProps {
   onAddFeedback: (category: string, content: string) => void
   onEditFeedback: (id: number, content: string) => void
   onVote: (feedbackId: number) => void
+  votedItems: Set<number>
 }
 
 export function FeedbackColumn({
@@ -33,6 +34,7 @@ export function FeedbackColumn({
   onAddFeedback,
   onEditFeedback,
   onVote,
+  votedItems,
 }: FeedbackColumnProps) {
   const [isAdding, setIsAdding] = useState(false)
   const [newContent, setNewContent] = useState("")
@@ -58,7 +60,13 @@ export function FeedbackColumn({
       <CardContent className="space-y-3">
         {/* Existing feedback items */}
         {items.map((item) => (
-          <FeedbackItem key={item.id} item={item} onEdit={onEditFeedback} onVote={onVote} />
+          <FeedbackItem
+            key={item.id}
+            item={item}
+            onEdit={onEditFeedback}
+            onVote={onVote}
+            hasVoted={votedItems.has(item.id)}
+          />
         ))}
 
         {/* Add new feedback form */}
