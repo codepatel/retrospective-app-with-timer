@@ -169,7 +169,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
             await sql`
               UPDATE retrospectives 
               SET 
-                timer_start_time = NOW() - INTERVAL '${elapsed} seconds',
+                timer_start_time = NOW() - make_interval(secs => ${elapsed}),
                 timer_is_running = true,
                 timer_is_paused = false
               WHERE id = ${retrospectiveId}
