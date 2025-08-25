@@ -1,0 +1,71 @@
+name: Sync main → staging
+
+on:
+  push:
+    branches: [ main ]         # run only when main updates
+  workflow_dispatch:           # allow manual runs
+
+permissions:
+  contents: write              # required to push back to the repo
+  pull-requests: write         # required to open PRs on conflict
+
+concurrency:
+  group: sync-main-to-staging
+  cancel-in-progress: false
+
+env:
+  SOURCE_BRANCH: main
+  TARGET_BRANCH: staging
+  GIT_AUTHOR_NAME: github-actions
+  GIT_AUTHOR_EMAIL: actions@github.com
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout TARGET branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0    # need full history for merge
+
+      - name: Set bot identity
+        run: |
+          git config user.name  "${{ env.GIT_AUTHOR_NAME }}"
+          git config user.email "${{ env.GIT_AUTHOR_EMAIL }}"
+
+      - name: Fetch SOURCE branch
+        run: |
+          git fetch origin ${{ env.SOURCE_BRANCH }}:${{ env.SOURCE_BRANCH }}
+
+      - name: Merge SOURCE into TARGET (no rebase)
+        id: merge
+        run: |
+          set -e
+          # Try a non-interactive merge
+          if git merge --no-ff --no-edit ${{ env.SOURCE_BRANCH }}; then
+            echo "merged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "merged=false" >> "$GITHUB_OUTPUT"
+            # Abort partial merge so the working tree is clean for PR creation
+            git merge --abort || true
+          fi
+
+      - name: Push updated TARGET
+        if: steps.merge.outputs.merged == 'true'
+        run: |
+          git push origin HEAD:${{ env.TARGET_BRANCH }}
+
+      # If merge conflicts, open a PR to resolve them
+      - name: Create PR for conflicts
+        if: steps.merge.outputs.merged != 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: "bot/sync-${{ env.SOURCE_BRANCH }}-to-${{ env.TARGET_BRANCH }}"
+          title: "Sync ${SOURCE_BRANCH} → ${TARGET_BRANCH} (conflict resolution needed)"
+          body: |
+            This automated workflow attempted to merge **${{ env.SOURCE_BRANCH }}** into **${{ env.TARGET_BRANCH }}** but hit conflicts.
+            Please resolve the conflicts and merge.
+          commit-message: "chore: prepare conflict-resolution PR for ${SOURCE_BRANCH} → ${TARGET_BRANCH}"
+          base: ${{ env.TARGET_BRANCH }}
+          labels: sync, automation
