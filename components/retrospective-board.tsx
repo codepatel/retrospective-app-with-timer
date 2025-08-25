@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { FeedbackColumn } from "@/components/feedback-column"
 import { TimerControls, type TimerControlsRef } from "@/components/timer-controls"
 import { Copy, RotateCcw, Share2, Wifi, WifiOff } from "lucide-react"
@@ -41,6 +42,7 @@ export function RetrospectiveBoard() {
   const [isLoading, setIsLoading] = useState(true)
   const [shareUrl, setShareUrl] = useState<string>("")
   const [votedItems, setVotedItems] = useState<Set<number>>(new Set())
+  const [showTimer, setShowTimer] = useState(false)
   const timerRef = useRef<TimerControlsRef>(null)
   const { toast } = useToast()
   const handleTimerEvent = (event: TimerEvent) => {
@@ -335,6 +337,7 @@ export function RetrospectiveBoard() {
     setFeedbackItems([])
     setCurrentRetrospective(null)
     setVotedItems(new Set())
+    setShowTimer(false)
     timerRef.current?.resetTimer()
     initializeRetrospective()
     toast({
@@ -401,20 +404,34 @@ export function RetrospectiveBoard() {
                 </span>
               </div>
             </div>
-            
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <TimerControls ref={timerRef} retrospectiveId={currentRetrospective?.id || null} />
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="show-timer"
+              checked={showTimer}
+              onCheckedChange={(checked) => setShowTimer(checked === true)}
+            />
+            <label
+              htmlFor="show-timer"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              Time the Retrospective
+            </label>
+          </div>
+
+          {showTimer && <TimerControls ref={timerRef} retrospectiveId={currentRetrospective?.id || null} />}
+
           <div className="flex gap-2">
-              <Button onClick={copyToClipboard} variant="outline" size="sm">
-                <Copy className="w-4 h-4 mr-2" />
-                Copy Feedback to Clipboard
-              </Button>
-              <Button onClick={startNewRetrospective} variant="outline" size="sm">
-                <RotateCcw className="w-4 h-4 mr-2" />
-                Start New Retrospective
-              </Button>
+            <Button onClick={copyToClipboard} variant="outline" size="sm">
+              <Copy className="w-4 h-4 mr-2" />
+              Copy Feedback to Clipboard
+            </Button>
+            <Button onClick={startNewRetrospective} variant="outline" size="sm">
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Start New Retrospective
+            </Button>
           </div>
 
           {shareUrl && (
