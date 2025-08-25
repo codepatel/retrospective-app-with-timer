@@ -258,30 +258,19 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         break
 
       case "pause":
-        console.log("[v0] PAUSE: Checking for running timer in database for retrospective", retrospectiveId)
-
         const currentTimerState = await sql`
-          SELECT timer_duration, timer_start_time, timer_is_running, timer_is_paused, timer_controlled_by
+          SELECT timer_duration, timer_start_time 
           FROM retrospectives 
-          WHERE id = ${retrospectiveId}
+          WHERE id = ${retrospectiveId} AND timer_is_running = true
         `
 
-        console.log("[v0] PAUSE: Database timer state:", currentTimerState[0])
-
-        const runningTimers = currentTimerState.filter((row) => row.timer_is_running === true)
-        console.log("[v0] PAUSE: Running timers found:", runningTimers.length)
-
-        if (runningTimers.length === 0) {
-          console.log("[v0] PAUSE: No running timer found - current state:", currentTimerState[0])
+        if (currentTimerState.length === 0) {
           return NextResponse.json({ error: "No running timer found" }, { status: 400 })
         }
 
-        const timerData = runningTimers[0]
-        const startTime = new Date(timerData.timer_start_time)
+        const startTime = new Date(currentTimerState[0].timer_start_time)
         const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000)
-        const remainingAtPause = Math.max(0, timerData.timer_duration - elapsed)
-
-        console.log("[v0] PAUSE: Calculated remaining time:", remainingAtPause)
+        const remainingAtPause = Math.max(0, currentTimerState[0].timer_duration - elapsed)
 
         await safeTimerUpdate(
           {
@@ -301,7 +290,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
         timerState = {
           id: retrospectiveId,
-          duration: timerData.timer_duration || 0,
+          duration: currentTimerState[0].timer_duration || 0,
           start_time: startTime,
           is_running: false,
           is_paused: true,
