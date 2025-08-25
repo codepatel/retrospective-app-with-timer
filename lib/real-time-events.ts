@@ -14,15 +14,16 @@ export interface TimerEvent {
 }
 
 export interface FeedbackEvent {
-  type: "feedback_added" | "feedback_updated" | "feedback_voted" | "feedback_deleted"
+  type: "feedback_added" | "feedback_updated" | "feedback_voted" | "feedback_deleted" | "timer_visibility_changed"
   retrospectiveId: number
   timestamp: number
   data: {
-    id: number
+    id?: number
     content?: string
     category?: string
     vote_count?: number
     action?: "added" | "removed"
+    timer_enabled?: boolean
   }
 }
 

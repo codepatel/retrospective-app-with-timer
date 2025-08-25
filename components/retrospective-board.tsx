@@ -27,6 +27,7 @@ interface Retrospective {
   session_id: string
   created_at: string
   is_active: boolean
+  timer_enabled: boolean
 }
 
 const CATEGORIES = [
@@ -95,6 +96,14 @@ export function RetrospectiveBoard() {
         )
         loadUserVotes()
         break
+
+      case "timer_visibility_changed":
+        setShowTimer(event.data.timer_enabled || false)
+        toast({
+          title: "Timer Settings Updated",
+          description: `Timer ${event.data.timer_enabled ? "enabled" : "disabled"} by another user`,
+        })
+        break
     }
   }
   const realtimeSync = useRealtimeSync({
@@ -129,6 +138,7 @@ export function RetrospectiveBoard() {
         const retrospective = await response.json()
         setCurrentRetrospective(retrospective)
         setShareUrl(`${window.location.origin}?session=${retrospective.session_id}`)
+        setShowTimer(retrospective.timer_enabled || false)
         loadFeedbackItems(retrospective.id)
       } else {
         initializeRetrospective()
@@ -389,6 +399,30 @@ export function RetrospectiveBoard() {
     }
   }
 
+  const handleTimerVisibilityChange = async (checked: boolean) => {
+    setShowTimer(checked)
+
+    if (!currentRetrospective) return
+
+    try {
+      const response = await fetch(`/api/retrospectives/${currentRetrospective.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timer_enabled: checked }),
+      })
+
+      if (response.ok) {
+        broadcastFeedbackEvent(
+          createFeedbackEvent("timer_visibility_changed", currentRetrospective.id, {
+            timer_enabled: checked,
+          }),
+        )
+      }
+    } catch (error) {
+      console.error("Failed to update timer visibility:", error)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -423,7 +457,7 @@ export function RetrospectiveBoard() {
             <Checkbox
               id="show-timer"
               checked={showTimer}
-              onCheckedChange={(checked) => setShowTimer(checked === true)}
+              onCheckedChange={(checked) => handleTimerVisibilityChange(checked === true)}
             />
             <label
               htmlFor="show-timer"
