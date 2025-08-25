@@ -257,6 +257,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       case "pause":
         await safeTimerUpdate(
           {
+            timer_is_running: false,
             timer_is_paused: true,
           },
           ` AND timer_is_running = true`,
@@ -291,10 +292,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           id: retrospectiveId,
           duration: pauseData.timer_duration || 0,
           start_time: pauseData.timer_start_time ? new Date(pauseData.timer_start_time) : null,
-          is_running: pauseData.timer_is_running || false,
-          is_paused: pauseData.timer_is_paused || false,
+          is_running: false, // Ensure paused timer shows as not running
+          is_paused: true, // Ensure paused state is true
           remaining_time: pauseRemainingTime,
-          controlled_by: pauseData.timer_controlled_by,
+          controlled_by: pauseData.timer_controlled_by, // Preserve control for resume
         }
         broadcastTimerEvent(retrospectiveId, createTimerEvent("timer_pause", retrospectiveId, timerState))
         break
