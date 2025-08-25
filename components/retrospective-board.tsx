@@ -404,7 +404,7 @@ export function RetrospectiveBoard() {
             <div className="flex gap-2">
               <Button onClick={copyToClipboard} variant="outline" size="sm">
                 <Copy className="w-4 h-4 mr-2" />
-                Copy to Clipboard
+                Copy Feedback to Clipboard
               </Button>
               <Button onClick={startNewRetrospective} variant="outline" size="sm">
                 <RotateCcw className="w-4 h-4 mr-2" />
@@ -428,7 +428,7 @@ export function RetrospectiveBoard() {
                   <span className="text-sm text-blue-700 break-all flex-1">{shareUrl}</span>
                   <Copy className="w-4 h-4 text-blue-500 group-hover:text-blue-600 flex-shrink-0" />
                 </button>
-                <p className="text-xs text-blue-600 mt-1">Click to copy</p>
+                <p className="text-xs text-blue-600 mt-1">Click above to copy</p>
               </div>
             </div>
           )}
