@@ -132,6 +132,14 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
 
       if (response.ok) {
         const timerState = await response.json()
+
+        if (action === "pause" || action === "stop") {
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current)
+            intervalRef.current = null
+          }
+        }
+
         setTimeLeft(timerState.remaining_time)
         setIsRunning(timerState.is_running)
         setIsPaused(timerState.is_paused)
