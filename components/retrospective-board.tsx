@@ -401,7 +401,12 @@ export function RetrospectiveBoard() {
                 </span>
               </div>
             </div>
-            <div className="flex gap-2">
+            
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <TimerControls ref={timerRef} retrospectiveId={currentRetrospective?.id || null} />
+          <div className="flex gap-2">
               <Button onClick={copyToClipboard} variant="outline" size="sm">
                 <Copy className="w-4 h-4 mr-2" />
                 Copy Feedback to Clipboard
@@ -410,11 +415,7 @@ export function RetrospectiveBoard() {
                 <RotateCcw className="w-4 h-4 mr-2" />
                 Start New Retrospective
               </Button>
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <TimerControls ref={timerRef} retrospectiveId={currentRetrospective?.id || null} />
+          </div>
 
           {shareUrl && (
             <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
