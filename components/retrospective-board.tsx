@@ -315,6 +315,7 @@ export function RetrospectiveBoard() {
             action: data.action,
           }),
         )
+
       } else {
         const errorData = await response.json()
         toast({
