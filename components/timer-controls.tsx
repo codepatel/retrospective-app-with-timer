@@ -122,7 +122,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
 
     setIsLoading(true)
     try {
-      const requestBody = { action, duration }
+      const requestBody = { action, duration, deviceId: currentDeviceId }
 
       const response = await fetch(`/api/retrospectives/${retrospectiveId}/timer`, {
         method: "POST",

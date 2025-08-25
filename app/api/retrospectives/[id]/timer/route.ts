@@ -126,8 +126,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const retrospectiveId = Number.parseInt(params.id)
-    const { action, duration } = await request.json()
-    const deviceId = getDeviceId(request)
+    const { action, duration, deviceId } = await request.json()
+    const finalDeviceId = deviceId || getDeviceId(request)
 
     if (isNaN(retrospectiveId)) {
       return NextResponse.json({ error: "Invalid retrospective ID" }, { status: 400 })
@@ -157,7 +157,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const currentControlledBy = retrospectiveCheck[0].timer_controlled_by
     const isCurrentlyRunning = retrospectiveCheck[0].timer_is_running
 
-    if (currentControlledBy && action !== "start" && currentControlledBy !== deviceId) {
+    if (currentControlledBy && action !== "start" && currentControlledBy !== finalDeviceId) {
       return NextResponse.json(
         {
           error: "Timer is controlled by another client",
@@ -167,7 +167,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       )
     }
 
-    if (action === "start" && isCurrentlyRunning && currentControlledBy && currentControlledBy !== deviceId) {
+    if (action === "start" && isCurrentlyRunning && currentControlledBy && currentControlledBy !== finalDeviceId) {
       return NextResponse.json(
         {
           error: "Timer is already running and controlled by another client",
@@ -214,7 +214,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           timer_start_time: "NOW()",
           timer_is_running: true,
           timer_is_paused: false,
-          timer_controlled_by: `'${deviceId}'`,
+          timer_controlled_by: `'${finalDeviceId}'`,
         })
 
         // Set server-side timer to auto-stop when duration expires
@@ -249,7 +249,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           is_running: true,
           is_paused: false,
           remaining_time: duration,
-          controlled_by: deviceId,
+          controlled_by: finalDeviceId,
         }
         broadcastTimerEvent(retrospectiveId, createTimerEvent("timer_start", retrospectiveId, timerState))
         break
@@ -304,7 +304,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         const currentState = await sql`
           SELECT timer_duration, timer_start_time 
           FROM retrospectives 
-          WHERE id = ${retrospectiveId} AND timer_controlled_by = ${deviceId}
+          WHERE id = ${retrospectiveId} AND timer_controlled_by = ${finalDeviceId}
         `
 
         if (currentState.length > 0) {
@@ -319,7 +319,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
                 timer_start_time = NOW() - make_interval(secs => ${elapsed}),
                 timer_is_running = true,
                 timer_is_paused = false
-              WHERE id = ${retrospectiveId} AND timer_controlled_by = ${deviceId}
+              WHERE id = ${retrospectiveId} AND timer_controlled_by = ${finalDeviceId}
             `
 
             // Set server-side timer for remaining time
@@ -350,7 +350,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
               is_running: true,
               is_paused: false,
               remaining_time: remaining,
-              controlled_by: deviceId,
+              controlled_by: finalDeviceId,
             }
             broadcastTimerEvent(retrospectiveId, createTimerEvent("timer_resume", retrospectiveId, timerState))
           } else {
