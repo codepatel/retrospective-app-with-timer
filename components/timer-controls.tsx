@@ -120,9 +120,12 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
   const performTimerAction = async (action: string, duration?: number) => {
     if (!retrospectiveId) return
 
+    console.log("[v0] performTimerAction called with:", { action, duration, retrospectiveId, currentDeviceId })
+
     setIsLoading(true)
     try {
       const requestBody = { action, duration, deviceId: currentDeviceId }
+      console.log("[v0] Timer API request body:", requestBody)
 
       const response = await fetch(`/api/retrospectives/${retrospectiveId}/timer`, {
         method: "POST",
@@ -130,15 +133,26 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         body: JSON.stringify(requestBody),
       })
 
+      console.log("[v0] Timer API response status:", response.status)
+
       if (response.ok) {
         const timerState = await response.json()
+        console.log("[v0] Timer API response data:", timerState)
 
         if (action === "pause" || action === "stop") {
+          console.log("[v0] Clearing interval for pause/stop action")
           if (intervalRef.current) {
             clearInterval(intervalRef.current)
             intervalRef.current = null
           }
         }
+
+        console.log("[v0] Updating state with:", {
+          remaining_time: timerState.remaining_time,
+          is_running: timerState.is_running,
+          is_paused: timerState.is_paused,
+          controlled_by: timerState.controlled_by,
+        })
 
         setTimeLeft(timerState.remaining_time)
         setIsRunning(timerState.is_running)
@@ -151,6 +165,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         })
       } else {
         const error = await response.json()
+        console.log("[v0] Timer API error response:", error)
         if (response.status === 403) {
           toast({
             title: "Timer Locked",
@@ -166,13 +181,14 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         }
       }
     } catch (error) {
-      console.error(`Failed to ${action} timer:`, error)
+      console.error(`[v0] Timer API error:`, error)
       toast({
         title: "Error",
         description: `Failed to ${action} timer`,
         variant: "destructive",
       })
     } finally {
+      console.log("[v0] Setting isLoading to false")
       setIsLoading(false)
     }
   }
@@ -182,6 +198,15 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
   }
 
   const pauseTimer = () => {
+    console.log("[v0] PAUSE BUTTON CLICKED - Starting pause operation")
+    console.log("[v0] Current state before pause:", {
+      isRunning,
+      isPaused,
+      timeLeft,
+      hasControl,
+      controlledBy,
+      currentDeviceId,
+    })
     performTimerAction("pause")
   }
 
@@ -248,7 +273,6 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
 
   const hasControl = !controlledBy || controlledBy === currentDeviceId
 
-  
   console.log("[v0] Timer Controls Debug:", {
     hasControl,
     controlledBy,
@@ -263,7 +287,6 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
     resumeButtonDisabled: isLoading || !hasControl,
     stopButtonDisabled: isLoading || !hasControl,
   })
-  
 
   return (
     <div className="flex items-center gap-4">
