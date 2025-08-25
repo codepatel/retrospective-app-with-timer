@@ -214,7 +214,6 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
   }
 
   const hasControl = !controlledBy || controlledBy === currentDeviceId
-  const isControlledByOther = controlledBy && controlledBy !== currentDeviceId
 
   return (
     <div className="flex items-center gap-4">
@@ -242,7 +241,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
       </div>
 
       <div className="flex items-center gap-2">
-        {isControlledByOther && (
+        {!hasControl && (
           <div className="flex items-center gap-1 text-amber-600 text-sm">
             <Lock className="w-3 h-3" />
             <span>Locked</span>
