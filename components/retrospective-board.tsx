@@ -48,6 +48,18 @@ export function RetrospectiveBoard() {
   const handleTimerEvent = (event: TimerEvent) => {
     console.log("[BOARD] Received timer event:", event.type)
     timerRef.current?.handleTimerEvent(event)
+
+    if (
+      currentRetrospective &&
+      (event.type === "started" ||
+        event.type === "paused" ||
+        event.type === "resumed" ||
+        event.type === "stopped" ||
+        event.type === "expired")
+    ) {
+      loadFeedbackItems(currentRetrospective.id)
+      loadUserVotes()
+    }
   }
   const handleFeedbackEvent = (event: FeedbackEvent) => {
     console.log("[BOARD] Received feedback event:", event.type, event.data)
