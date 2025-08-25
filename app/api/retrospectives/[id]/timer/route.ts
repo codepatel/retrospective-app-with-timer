@@ -41,13 +41,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
           timer_start_time,
           timer_is_running,
           timer_is_paused,
-          timer_controlled_by
+          timer_controlled_by,
+          timer_remaining_time
         FROM retrospectives 
         WHERE id = ${retrospectiveId} AND is_active = true
       `
     } catch (columnError) {
-      // Fallback query without timer_controlled_by column
-      console.log("[v0] timer_controlled_by column not found, using fallback query")
+      // Fallback query without timer_controlled_by or timer_remaining_time columns
+      console.log("[v0] timer columns not found, using fallback query")
       result = await sql`
         SELECT 
           id,
@@ -58,8 +59,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         FROM retrospectives 
         WHERE id = ${retrospectiveId} AND is_active = true
       `
-      // Add null controlled_by to each result
-      result = result.map((row) => ({ ...row, timer_controlled_by: null }))
+      // Add null/default values for missing columns
+      result = result.map((row) => ({
+        ...row,
+        timer_controlled_by: null,
+        timer_remaining_time: 0,
+      }))
     }
 
     if (result.length === 0) {
@@ -69,8 +74,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const retrospective = result[0]
     let remainingTime = 0
 
-    // Calculate remaining time if timer is running
-    if (retrospective.timer_is_running && retrospective.timer_start_time && !retrospective.timer_is_paused) {
+    // Calculate remaining time based on timer state
+    if (retrospective.timer_is_paused) {
+      remainingTime = retrospective.timer_remaining_time || 0
+    } else if (retrospective.timer_is_running && retrospective.timer_start_time) {
       const startTime = new Date(retrospective.timer_start_time)
       const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000)
       remainingTime = Math.max(0, retrospective.timer_duration - elapsed)
@@ -80,11 +87,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         try {
           await sql`
             UPDATE retrospectives 
-            SET timer_is_running = false, timer_is_paused = false, timer_controlled_by = NULL
+            SET timer_is_running = false, timer_is_paused = false, timer_controlled_by = NULL, timer_remaining_time = 0
             WHERE id = ${retrospectiveId}
           `
         } catch (updateError) {
-          // Fallback update without timer_controlled_by
+          // Fallback update without new columns
           await sql`
             UPDATE retrospectives 
             SET timer_is_running = false, timer_is_paused = false
@@ -97,11 +104,6 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
           activeTimers.delete(retrospectiveId)
         }
       }
-    } else if (retrospective.timer_is_paused && retrospective.timer_start_time) {
-      // For paused timers, calculate remaining time at pause point
-      const startTime = new Date(retrospective.timer_start_time)
-      const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000)
-      remainingTime = Math.max(0, retrospective.timer_duration - elapsed)
     } else {
       remainingTime = retrospective.timer_duration || 0
     }
@@ -186,9 +188,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         const query = `UPDATE retrospectives SET ${setClause} WHERE id = ${retrospectiveId}${whereClause}`
         await sql.unsafe(query)
       } catch (controlledByError) {
-        // Fallback: update without timer_controlled_by
+        // Fallback: update without new columns
         const fallbackFields = { ...updateFields }
         delete fallbackFields.timer_controlled_by
+        delete fallbackFields.timer_remaining_time
 
         if (Object.keys(fallbackFields).length > 0) {
           const setClause = Object.entries(fallbackFields)
@@ -225,7 +228,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         const timeout = setTimeout(async () => {
           await sql`
             UPDATE retrospectives 
-            SET timer_is_running = false, timer_is_paused = false, timer_controlled_by = NULL
+            SET timer_is_running = false, timer_is_paused = false, timer_controlled_by = NULL, timer_remaining_time = 0
             WHERE id = ${retrospectiveId}
           `
           activeTimers.delete(retrospectiveId)
@@ -255,10 +258,25 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         break
 
       case "pause":
+        const currentTimerState = await sql`
+          SELECT timer_duration, timer_start_time 
+          FROM retrospectives 
+          WHERE id = ${retrospectiveId} AND timer_is_running = true
+        `
+
+        if (currentTimerState.length === 0) {
+          return NextResponse.json({ error: "No running timer found" }, { status: 400 })
+        }
+
+        const startTime = new Date(currentTimerState[0].timer_start_time)
+        const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000)
+        const remainingAtPause = Math.max(0, currentTimerState[0].timer_duration - elapsed)
+
         await safeTimerUpdate(
           {
             timer_is_running: false,
             timer_is_paused: true,
+            timer_remaining_time: remainingAtPause,
           },
           ` AND timer_is_running = true`,
         )
@@ -269,96 +287,73 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           activeTimers.delete(retrospectiveId)
         }
 
-        const pauseResult = await sql`
-          SELECT 
-            timer_duration,
-            timer_start_time,
-            timer_is_running,
-            timer_is_paused,
-            timer_controlled_by
-          FROM retrospectives 
-          WHERE id = ${retrospectiveId}
-        `
-
-        const pauseData = pauseResult[0]
-        let pauseRemainingTime = 0
-        if (pauseData.timer_start_time) {
-          const startTime = new Date(pauseData.timer_start_time)
-          const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000)
-          pauseRemainingTime = Math.max(0, pauseData.timer_duration - elapsed)
-        }
-
         timerState = {
           id: retrospectiveId,
-          duration: pauseData.timer_duration || 0,
-          start_time: pauseData.timer_start_time ? new Date(pauseData.timer_start_time) : null,
-          is_running: false, // Ensure paused timer shows as not running
-          is_paused: true, // Ensure paused state is true
-          remaining_time: pauseRemainingTime,
-          controlled_by: pauseData.timer_controlled_by, // Preserve control for resume
+          duration: currentTimerState[0].timer_duration || 0,
+          start_time: startTime,
+          is_running: false,
+          is_paused: true,
+          remaining_time: remainingAtPause,
+          controlled_by: finalDeviceId, // Preserve control for resume
         }
         broadcastTimerEvent(retrospectiveId, createTimerEvent("timer_pause", retrospectiveId, timerState))
         break
 
       case "resume":
-        // Get current state to calculate remaining time
-        const currentState = await sql`
-          SELECT timer_duration, timer_start_time 
+        const pausedState = await sql`
+          SELECT timer_remaining_time, timer_controlled_by 
           FROM retrospectives 
-          WHERE id = ${retrospectiveId} AND timer_controlled_by = ${finalDeviceId}
+          WHERE id = ${retrospectiveId} AND timer_is_paused = true
         `
 
-        if (currentState.length > 0) {
-          const startTime = new Date(currentState[0].timer_start_time)
-          const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000)
-          const remaining = Math.max(0, currentState[0].timer_duration - elapsed)
+        if (pausedState.length === 0 || pausedState[0].timer_controlled_by !== finalDeviceId) {
+          return NextResponse.json({ error: "No paused timer found or not controlled by this client" }, { status: 404 })
+        }
 
-          if (remaining > 0) {
+        const remainingTime = pausedState[0].timer_remaining_time || 0
+
+        if (remainingTime > 0) {
+          await safeTimerUpdate({
+            timer_start_time: "NOW()",
+            timer_duration: remainingTime,
+            timer_is_running: true,
+            timer_is_paused: false,
+            timer_remaining_time: 0,
+          })
+
+          // Set server-side timer for remaining time
+          const timeout = setTimeout(async () => {
             await sql`
               UPDATE retrospectives 
-              SET 
-                timer_start_time = NOW() - make_interval(secs => ${elapsed}),
-                timer_is_running = true,
-                timer_is_paused = false
-              WHERE id = ${retrospectiveId} AND timer_controlled_by = ${finalDeviceId}
+              SET timer_is_running = false, timer_is_paused = false, timer_controlled_by = NULL, timer_remaining_time = 0
+              WHERE id = ${retrospectiveId}
             `
+            activeTimers.delete(retrospectiveId)
+            broadcastTimerEvent(
+              retrospectiveId,
+              createTimerEvent("timer_stop", retrospectiveId, {
+                duration: 0,
+                remaining_time: 0,
+                is_running: false,
+                is_paused: false,
+                start_time: null,
+              }),
+            )
+          }, remainingTime * 1000)
 
-            // Set server-side timer for remaining time
-            const timeout = setTimeout(async () => {
-              await sql`
-                UPDATE retrospectives 
-                SET timer_is_running = false, timer_is_paused = false, timer_controlled_by = NULL
-                WHERE id = ${retrospectiveId}
-              `
-              activeTimers.delete(retrospectiveId)
-              broadcastTimerEvent(
-                retrospectiveId,
-                createTimerEvent("timer_stop", retrospectiveId, {
-                  duration: 0,
-                  remaining_time: 0,
-                  is_running: false,
-                  is_paused: false,
-                  start_time: null,
-                }),
-              )
-            }, remaining * 1000)
-
-            activeTimers.set(retrospectiveId, timeout)
-            timerState = {
-              id: retrospectiveId,
-              duration: currentState[0].timer_duration,
-              start_time: new Date(),
-              is_running: true,
-              is_paused: false,
-              remaining_time: remaining,
-              controlled_by: finalDeviceId,
-            }
-            broadcastTimerEvent(retrospectiveId, createTimerEvent("timer_resume", retrospectiveId, timerState))
-          } else {
-            return NextResponse.json({ error: "Timer has expired" }, { status: 400 })
+          activeTimers.set(retrospectiveId, timeout)
+          timerState = {
+            id: retrospectiveId,
+            duration: remainingTime,
+            start_time: new Date(),
+            is_running: true,
+            is_paused: false,
+            remaining_time: remainingTime,
+            controlled_by: finalDeviceId,
           }
+          broadcastTimerEvent(retrospectiveId, createTimerEvent("timer_resume", retrospectiveId, timerState))
         } else {
-          return NextResponse.json({ error: "Timer not found or not controlled by this client" }, { status: 404 })
+          return NextResponse.json({ error: "Timer has expired" }, { status: 400 })
         }
         break
 
@@ -368,6 +363,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           timer_is_paused: false,
           timer_start_time: "NULL",
           timer_controlled_by: "NULL",
+          timer_remaining_time: 0,
         })
 
         // Clear server-side timer
@@ -403,7 +399,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
             timer_start_time,
             timer_is_running,
             timer_is_paused,
-            timer_controlled_by
+            timer_controlled_by,
+            timer_remaining_time
           FROM retrospectives 
           WHERE id = ${retrospectiveId}
         `
@@ -415,7 +412,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           start_time: setData.timer_start_time ? new Date(setData.timer_start_time) : null,
           is_running: setData.timer_is_running || false,
           is_paused: setData.timer_is_paused || false,
-          remaining_time: setData.timer_duration || 0,
+          remaining_time: setData.timer_remaining_time || 0,
           controlled_by: setData.timer_controlled_by,
         }
         break
