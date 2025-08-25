@@ -3,11 +3,15 @@
 import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { FeedbackColumn } from "@/components/feedback-column"
 import { TimerControls, type TimerControlsRef } from "@/components/timer-controls"
-import { Copy, RotateCcw, Share2 } from "lucide-react"
+import { Copy, RotateCcw, Share2, Wifi, WifiOff } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { getDeviceId } from "@/lib/device-id"
+import { useRealtimeSync } from "@/hooks/use-realtime-sync"
+import { broadcastFeedbackEvent, createFeedbackEvent } from "@/lib/real-time-events"
+import type { TimerEvent, FeedbackEvent } from "@/lib/real-time-events"
 
 interface FeedbackItem {
   id: number
@@ -23,6 +27,7 @@ interface Retrospective {
   session_id: string
   created_at: string
   is_active: boolean
+  timer_enabled: boolean
 }
 
 const CATEGORIES = [
@@ -38,8 +43,76 @@ export function RetrospectiveBoard() {
   const [isLoading, setIsLoading] = useState(true)
   const [shareUrl, setShareUrl] = useState<string>("")
   const [votedItems, setVotedItems] = useState<Set<number>>(new Set())
+  const [showTimer, setShowTimer] = useState(false)
   const timerRef = useRef<TimerControlsRef>(null)
   const { toast } = useToast()
+  const handleTimerEvent = (event: TimerEvent) => {
+    console.log("[BOARD] Received timer event:", event.type)
+    timerRef.current?.handleTimerEvent(event)
+
+    if (
+      currentRetrospective &&
+      (event.type === "started" ||
+        event.type === "paused" ||
+        event.type === "resumed" ||
+        event.type === "stopped" ||
+        event.type === "expired")
+    ) {
+      loadFeedbackItems(currentRetrospective.id)
+      loadUserVotes()
+    }
+  }
+  const handleFeedbackEvent = (event: FeedbackEvent) => {
+    console.log("[BOARD] Received feedback event:", event.type, event.data)
+
+    switch (event.type) {
+      case "feedback_added":
+        if (currentRetrospective) {
+          loadFeedbackItems(currentRetrospective.id)
+        }
+        toast({
+          title: "New Feedback",
+          description: "Another user added feedback",
+        })
+        break
+
+      case "feedback_updated":
+        setFeedbackItems((prev) =>
+          prev.map((item) =>
+            item.id === event.data.id ? { ...item, content: event.data.content || item.content } : item,
+          ),
+        )
+        toast({
+          title: "Feedback Updated",
+          description: "Another user updated feedback",
+        })
+        break
+
+      case "feedback_voted":
+        setFeedbackItems((prev) =>
+          prev.map((item) =>
+            item.id === event.data.id ? { ...item, vote_count: event.data.vote_count || item.vote_count } : item,
+          ),
+        )
+        loadUserVotes()
+        break
+
+      case "timer_visibility_changed":
+        setShowTimer(event.data.timer_enabled || false)
+        toast({
+          title: "Timer Settings Updated",
+          description: `Timer ${event.data.timer_enabled ? "enabled" : "disabled"} by another user`,
+        })
+        break
+    }
+  }
+  const realtimeSync = useRealtimeSync({
+    retrospectiveId: currentRetrospective?.id || null,
+    onTimerEvent: handleTimerEvent,
+    onFeedbackEvent: handleFeedbackEvent,
+    pollInterval: 1000,
+    enabled: !!currentRetrospective,
+  })
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
@@ -65,6 +138,7 @@ export function RetrospectiveBoard() {
         const retrospective = await response.json()
         setCurrentRetrospective(retrospective)
         setShareUrl(`${window.location.origin}?session=${retrospective.session_id}`)
+        setShowTimer(retrospective.timer_enabled || false)
         loadFeedbackItems(retrospective.id)
       } else {
         initializeRetrospective()
@@ -134,6 +208,16 @@ export function RetrospectiveBoard() {
       if (response.ok) {
         const newItem = await response.json()
         setFeedbackItems((prev) => [...prev, newItem])
+
+        broadcastFeedbackEvent(
+          createFeedbackEvent("feedback_added", currentRetrospective.id, {
+            id: newItem.id,
+            content: newItem.content,
+            category: newItem.category,
+            vote_count: newItem.vote_count,
+          }),
+        )
+
         toast({
           title: "Success",
           description: "Feedback added successfully",
@@ -150,6 +234,8 @@ export function RetrospectiveBoard() {
   }
 
   const handleEditFeedback = async (id: number, content: string) => {
+    if (!currentRetrospective) return
+
     try {
       const response = await fetch(`/api/feedback/${id}`, {
         method: "PUT",
@@ -160,6 +246,14 @@ export function RetrospectiveBoard() {
       if (response.ok) {
         const updatedItem = await response.json()
         setFeedbackItems((prev) => prev.map((item) => (item.id === id ? updatedItem : item)))
+
+        broadcastFeedbackEvent(
+          createFeedbackEvent("feedback_updated", currentRetrospective.id, {
+            id: updatedItem.id,
+            content: updatedItem.content,
+          }),
+        )
+
         toast({
           title: "Success",
           description: "Feedback updated successfully",
@@ -176,6 +270,8 @@ export function RetrospectiveBoard() {
   }
 
   const handleVote = async (feedbackId: number) => {
+    if (!currentRetrospective) return
+
     try {
       const deviceId = getDeviceId()
       const response = await fetch("/api/votes", {
@@ -211,6 +307,15 @@ export function RetrospectiveBoard() {
         setFeedbackItems((prev) =>
           prev.map((item) => (item.id === feedbackId ? { ...item, vote_count: data.total_votes } : item)),
         )
+
+        broadcastFeedbackEvent(
+          createFeedbackEvent("feedback_voted", currentRetrospective.id, {
+            id: feedbackId,
+            vote_count: data.total_votes,
+            action: data.action,
+          }),
+        )
+
       } else {
         const errorData = await response.json()
         toast({
@@ -255,6 +360,7 @@ export function RetrospectiveBoard() {
     setFeedbackItems([])
     setCurrentRetrospective(null)
     setVotedItems(new Set())
+    setShowTimer(false)
     timerRef.current?.resetTimer()
     initializeRetrospective()
     toast({
@@ -294,6 +400,30 @@ export function RetrospectiveBoard() {
     }
   }
 
+  const handleTimerVisibilityChange = async (checked: boolean) => {
+    setShowTimer(checked)
+
+    if (!currentRetrospective) return
+
+    try {
+      const response = await fetch(`/api/retrospectives/${currentRetrospective.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timer_enabled: checked }),
+      })
+
+      if (response.ok) {
+        broadcastFeedbackEvent(
+          createFeedbackEvent("timer_visibility_changed", currentRetrospective.id, {
+            timer_enabled: checked,
+          }),
+        )
+      }
+    } catch (error) {
+      console.error("Failed to update timer visibility:", error)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -308,21 +438,48 @@ export function RetrospectiveBoard() {
       <Card className="bg-white/80 backdrop-blur-sm border-slate-200">
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            <span>Session Controls</span>
-            <div className="flex gap-2">
-              <Button onClick={copyToClipboard} variant="outline" size="sm">
-                <Copy className="w-4 h-4 mr-2" />
-                Copy to Clipboard
-              </Button>
-              <Button onClick={startNewRetrospective} variant="outline" size="sm">
-                <RotateCcw className="w-4 h-4 mr-2" />
-                Start New Retrospective
-              </Button>
+            <div className="flex items-center gap-2">
+              <span>Session Controls</span>
+              <div className="flex items-center gap-1">
+                {realtimeSync.isConnected ? (
+                  <Wifi className="w-4 h-4 text-green-600" />
+                ) : (
+                  <WifiOff className="w-4 h-4 text-red-600" />
+                )}
+                <span className="text-xs text-slate-500">
+                  {realtimeSync.isConnected ? "Connected" : "Disconnected"}
+                </span>
+              </div>
             </div>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <TimerControls ref={timerRef} />
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="show-timer"
+              checked={showTimer}
+              onCheckedChange={(checked) => handleTimerVisibilityChange(checked === true)}
+            />
+            <label
+              htmlFor="show-timer"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+            >
+              Time the Retrospective
+            </label>
+          </div>
+
+          {showTimer && <TimerControls ref={timerRef} retrospectiveId={currentRetrospective?.id || null} />}
+
+          <div className="flex gap-2">
+            <Button onClick={copyToClipboard} variant="outline" size="sm">
+              <Copy className="w-4 h-4 mr-2" />
+              Copy Feedback to Clipboard
+            </Button>
+            <Button onClick={startNewRetrospective} variant="outline" size="sm">
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Start New Retrospective
+            </Button>
+          </div>
 
           {shareUrl && (
             <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -336,7 +493,7 @@ export function RetrospectiveBoard() {
                   <span className="text-sm text-blue-700 break-all flex-1">{shareUrl}</span>
                   <Copy className="w-4 h-4 text-blue-500 group-hover:text-blue-600 flex-shrink-0" />
                 </button>
-                <p className="text-xs text-blue-600 mt-1">Click to copy</p>
+                <p className="text-xs text-blue-600 mt-1">Click above to copy</p>
               </div>
             </div>
           )}

@@ -8,9 +8,9 @@ export async function POST(request: NextRequest) {
     const { title } = await request.json()
 
     const result = await sql`
-      INSERT INTO retrospectives (title)
-      VALUES (${title || "Retrospective Session"})
-      RETURNING id, title, session_id, created_at, is_active
+      INSERT INTO retrospectives (title, timer_enabled)
+      VALUES (${title || "Retrospective Session"}, false)
+      RETURNING id, title, session_id, created_at, is_active, timer_enabled
     `
 
     return NextResponse.json(result[0])
@@ -25,7 +25,7 @@ export async function GET() {
     await initializeDatabase()
 
     const result = await sql`
-      SELECT id, title, created_at, is_active
+      SELECT id, title, created_at, is_active, timer_enabled
       FROM retrospectives
       WHERE is_active = true
       ORDER BY created_at DESC

@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, initializeDatabase } from "@/lib/db"
+import { createFeedbackEvent, broadcastFeedbackEvent } from "@/lib/real-time-events"
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,6 +32,14 @@ export async function POST(request: NextRequest) {
 
     // Add vote_count: 0 for consistency with the frontend
     const feedbackItem = { ...result[0], vote_count: 0 }
+
+    const feedbackEvent = createFeedbackEvent("feedback_added", retrospective_id, {
+      id: feedbackItem.id,
+      content: feedbackItem.content,
+      category: feedbackItem.category,
+      vote_count: 0,
+    })
+    broadcastFeedbackEvent(feedbackEvent)
 
     return NextResponse.json(feedbackItem)
   } catch (error) {

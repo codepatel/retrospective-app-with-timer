@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
+import { createFeedbackEvent, broadcastFeedbackEvent } from "@/lib/real-time-events"
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,6 +13,16 @@ export async function POST(request: NextRequest) {
     if (!device_id) {
       return NextResponse.json({ error: "Device ID is required" }, { status: 400 })
     }
+
+    const feedbackItem = await sql`
+      SELECT id, retrospective_id FROM feedback_items WHERE id = ${feedback_item_id}
+    `
+
+    if (feedbackItem.length === 0) {
+      return NextResponse.json({ error: "Feedback item not found" }, { status: 404 })
+    }
+
+    const retrospectiveId = feedbackItem[0].retrospective_id
 
     const existingVote = await sql`
       SELECT id FROM votes 
@@ -30,19 +41,19 @@ export async function POST(request: NextRequest) {
         SELECT COUNT(*) as count FROM votes WHERE feedback_item_id = ${feedback_item_id}
       `
 
+      const totalVotes = Number.parseInt(voteCount[0].count)
+
+      const voteEvent = createFeedbackEvent("feedback_voted", retrospectiveId, {
+        id: feedback_item_id,
+        vote_count: totalVotes,
+        action: "removed",
+      })
+      broadcastFeedbackEvent(voteEvent)
+
       return NextResponse.json({
         action: "removed",
-        total_votes: Number.parseInt(voteCount[0].count),
+        total_votes: totalVotes,
       })
-    }
-
-    // Verify the feedback item exists
-    const feedbackItem = await sql`
-      SELECT id FROM feedback_items WHERE id = ${feedback_item_id}
-    `
-
-    if (feedbackItem.length === 0) {
-      return NextResponse.json({ error: "Feedback item not found" }, { status: 404 })
     }
 
     const result = await sql`
@@ -56,10 +67,19 @@ export async function POST(request: NextRequest) {
       SELECT COUNT(*) as count FROM votes WHERE feedback_item_id = ${feedback_item_id}
     `
 
+    const totalVotes = Number.parseInt(voteCount[0].count)
+
+    const voteEvent = createFeedbackEvent("feedback_voted", retrospectiveId, {
+      id: feedback_item_id,
+      vote_count: totalVotes,
+      action: "added",
+    })
+    broadcastFeedbackEvent(voteEvent)
+
     return NextResponse.json({
       action: "added",
       vote: result[0],
-      total_votes: Number.parseInt(voteCount[0].count),
+      total_votes: totalVotes,
     })
   } catch (error) {
     console.error("Error adding vote:", error)
