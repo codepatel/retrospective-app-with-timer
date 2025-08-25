@@ -28,3 +28,6 @@ Continue building your own app by "forking" on the v0.app Community template bel
 2. Deploy your chats from the v0 interface
 3. Changes are automatically pushed to this repository
 4. Vercel deploys the latest version from this repository
+
+## Screenshot
+<img width="1285" height="945" alt="team-retro-screenshot" src="https://github.com/user-attachments/assets/3209a925-85ff-46b3-bdd7-87e8262a6033" />
