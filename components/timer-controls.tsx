@@ -282,12 +282,12 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
           <>
             <div className="text-lg font-mono font-semibold text-slate-700 min-w-[60px]">{formatTime(timeLeft)}</div>
             {isRunning && !isPaused ? (
-              <Button onClick={pauseTimer} size="sm" variant="outline" disabled={isLoading || !hasControl}>
+              <Button onClick={pauseTimer} size="sm" variant="outline" disabled={isLoading }>
                 <Pause className="w-4 h-4 mr-2" />
                 {isLoading ? "Pausing..." : "Pause"}
               </Button>
             ) : (
-              <Button onClick={resumeTimer} size="sm" disabled={isLoading || !hasControl}>
+              <Button onClick={resumeTimer} size="sm" disabled={isLoading }>
                 <Play className="w-4 h-4 mr-2" />
                 {isLoading ? "Resuming..." : "Resume"}
               </Button>
