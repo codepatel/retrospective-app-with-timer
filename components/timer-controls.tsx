@@ -86,7 +86,9 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         setTimeLeft(timerState.remaining_time)
         setIsRunning(timerState.is_running)
         setIsPaused(timerState.is_paused)
-        setSelectedMinutes(Math.ceil(timerState.duration / 60))
+        if (timerState.duration > 0) {
+          setSelectedMinutes(Math.ceil(timerState.duration / 60))
+        }
         setControlledBy(timerState.controlled_by)
 
         if (timerState.is_running && !timerState.is_paused && timerState.remaining_time > 0) {
@@ -118,21 +120,9 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
   const performTimerAction = async (action: string, duration?: number) => {
     if (!retrospectiveId) return
 
-    console.log(
-      "[v0] Timer action:",
-      action,
-      "duration:",
-      duration,
-      "retrospectiveId:",
-      retrospectiveId,
-      "selectedMinutes:",
-      selectedMinutes,
-    )
-
     setIsLoading(true)
     try {
       const requestBody = { action, duration }
-      console.log("[v0] Timer API request body:", requestBody)
 
       const response = await fetch(`/api/retrospectives/${retrospectiveId}/timer`, {
         method: "POST",
@@ -140,11 +130,8 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         body: JSON.stringify(requestBody),
       })
 
-      console.log("[v0] Timer API response status:", response.status)
-
       if (response.ok) {
         const timerState = await response.json()
-        console.log("[v0] Timer API response data:", timerState)
         setTimeLeft(timerState.remaining_time)
         setIsRunning(timerState.is_running)
         setIsPaused(timerState.is_paused)
@@ -156,7 +143,6 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         })
       } else {
         const error = await response.json()
-        console.log("[v0] Timer API error response:", error)
         if (response.status === 403) {
           toast({
             title: "Timer Locked",
@@ -172,7 +158,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         }
       }
     } catch (error) {
-      console.error(`[v0] Failed to ${action} timer:`, error)
+      console.error(`Failed to ${action} timer:`, error)
       toast({
         title: "Error",
         description: `Failed to ${action} timer`,
@@ -184,12 +170,6 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
   }
 
   const startTimer = () => {
-    console.log(
-      "[v0] Starting timer with selectedMinutes:",
-      selectedMinutes,
-      "duration in seconds:",
-      selectedMinutes * 60,
-    )
     performTimerAction("start", selectedMinutes * 60)
   }
 
