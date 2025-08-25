@@ -250,7 +250,7 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         )}
 
         {timeLeft === 0 ? (
-          <Button onClick={startTimer} size="sm" disabled={isLoading || !retrospectiveId || isControlledByOther}>
+          <Button onClick={startTimer} size="sm" disabled={isLoading || !retrospectiveId || !hasControl}>
             <Play className="w-4 h-4 mr-2" />
             {isLoading ? "Starting..." : "Start Timer"}
           </Button>
@@ -258,17 +258,17 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
           <>
             <div className="text-lg font-mono font-semibold text-slate-700 min-w-[60px]">{formatTime(timeLeft)}</div>
             {isRunning && !isPaused ? (
-              <Button onClick={pauseTimer} size="sm" variant="outline" disabled={isLoading || isControlledByOther}>
+              <Button onClick={pauseTimer} size="sm" variant="outline" disabled={isLoading || !hasControl}>
                 <Pause className="w-4 h-4 mr-2" />
                 {isLoading ? "Pausing..." : "Pause"}
               </Button>
             ) : (
-              <Button onClick={resumeTimer} size="sm" disabled={isLoading || isControlledByOther}>
+              <Button onClick={resumeTimer} size="sm" disabled={isLoading || !hasControl}>
                 <Play className="w-4 h-4 mr-2" />
                 {isLoading ? "Resuming..." : "Resume"}
               </Button>
             )}
-            <Button onClick={stopTimer} size="sm" variant="outline" disabled={isLoading || isControlledByOther}>
+            <Button onClick={stopTimer} size="sm" variant="outline" disabled={isLoading || !hasControl}>
               <Square className="w-4 h-4 mr-2" />
               {isLoading ? "Stopping..." : "Stop"}
             </Button>
