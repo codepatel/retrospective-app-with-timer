@@ -276,6 +276,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           {
             timer_is_running: false,
             timer_is_paused: true,
+            timer_duration: remainingAtPause, // Store remaining time here for fallback
             timer_remaining_time: remainingAtPause,
           },
           ` AND timer_is_running = true`,
@@ -300,17 +301,30 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         break
 
       case "resume":
-        const pausedState = await sql`
-          SELECT timer_remaining_time, timer_controlled_by 
-          FROM retrospectives 
-          WHERE id = ${retrospectiveId} AND timer_is_paused = true
-        `
+        let pausedState
+        try {
+          pausedState = await sql`
+            SELECT timer_remaining_time, timer_controlled_by, timer_duration 
+            FROM retrospectives 
+            WHERE id = ${retrospectiveId} AND timer_is_paused = true
+          `
+        } catch (columnError) {
+          pausedState = await sql`
+            SELECT timer_duration, timer_controlled_by 
+            FROM retrospectives 
+            WHERE id = ${retrospectiveId} AND timer_is_paused = true
+          `
+          pausedState = pausedState.map((row) => ({ ...row, timer_remaining_time: row.timer_duration }))
+        }
 
-        if (pausedState.length === 0 || pausedState[0].timer_controlled_by !== finalDeviceId) {
+        if (
+          pausedState.length === 0 ||
+          (pausedState[0].timer_controlled_by && pausedState[0].timer_controlled_by !== finalDeviceId)
+        ) {
           return NextResponse.json({ error: "No paused timer found or not controlled by this client" }, { status: 404 })
         }
 
-        const remainingTime = pausedState[0].timer_remaining_time || 0
+        const remainingTime = pausedState[0].timer_remaining_time || pausedState[0].timer_duration || 0
 
         if (remainingTime > 0) {
           await safeTimerUpdate({
