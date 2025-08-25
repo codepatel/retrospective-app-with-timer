@@ -240,6 +240,21 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
 
   const hasControl = !controlledBy || controlledBy === currentDeviceId
 
+  console.log("[v0] Timer Controls Debug:", {
+    hasControl,
+    controlledBy,
+    currentDeviceId,
+    isLoading,
+    retrospectiveId,
+    isRunning,
+    isPaused,
+    timeLeft,
+    startButtonDisabled: isLoading || !retrospectiveId || !hasControl,
+    pauseButtonDisabled: isLoading || !hasControl,
+    resumeButtonDisabled: isLoading || !hasControl,
+    stopButtonDisabled: isLoading || !hasControl,
+  })
+
   return (
     <div className="flex items-center gap-4">
       <div className="flex items-center gap-2">
