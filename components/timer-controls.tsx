@@ -88,6 +88,27 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         setIsPaused(timerState.is_paused)
         setSelectedMinutes(Math.ceil(timerState.duration / 60))
         setControlledBy(timerState.controlled_by)
+
+        if (timerState.is_running && !timerState.is_paused && timerState.remaining_time > 0) {
+          // Clear any existing interval first
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current)
+            intervalRef.current = null
+          }
+
+          // Start countdown immediately
+          intervalRef.current = setInterval(() => {
+            setTimeLeft((prev) => {
+              if (prev <= 1) {
+                setIsRunning(false)
+                setIsPaused(false)
+                setControlledBy(null)
+                return 0
+              }
+              return prev - 1
+            })
+          }, 1000)
+        }
       }
     } catch (error) {
       console.error("Failed to load timer state:", error)
