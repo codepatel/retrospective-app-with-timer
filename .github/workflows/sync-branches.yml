@@ -38,6 +38,17 @@ jobs:
         run: |
           git fetch origin ${{ env.SOURCE_BRANCH }}:${{ env.SOURCE_BRANCH }}
 
+      # - name: Attempt a fast-forward
+      #   run: |
+      #     # Is TARGET an ancestor of SOURCE? If yes, fast-forward; else fail.
+      #     if git merge-base --is-ancestor origin/$TARGET_BRANCH origin/$SOURCE_BRANCH; then
+      #       git reset --hard origin/$SOURCE_BRANCH   # fast-forward in one step
+      #       git push origin HEAD:$TARGET_BRANCH
+      #     else
+      #       echo "Target has diverged; not fast-forwardable. Refusing to create a merge commit."
+      #       exit 1
+      #     fi
+
       - name: Merge SOURCE into TARGET (no rebase)
         id: merge
         run: |
