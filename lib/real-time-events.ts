@@ -92,9 +92,14 @@ class EventStore {
 export const eventStore = new EventStore()
 
 // Cleanup old events every minute
-setInterval(() => {
+const cleanupInterval = setInterval(() => {
   eventStore.cleanup()
 }, 60 * 1000)
+
+// Allow tests to stop the cleanup interval to avoid keeping the Node process alive
+export const stopEventStoreCleanup = () => {
+  clearInterval(cleanupInterval)
+}
 
 // Helper functions for creating events
 export function createTimerEvent(

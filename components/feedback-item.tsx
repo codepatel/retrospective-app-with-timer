@@ -49,10 +49,22 @@ export function FeedbackItem({ item, onEdit, onVote, hasVoted = false }: Feedbac
               autoFocus
             />
             <div className="flex gap-1">
-              <Button onClick={handleSave} size="sm" variant="outline" className="h-7 px-2 bg-transparent">
+              <Button
+                onClick={handleSave}
+                size="sm"
+                variant="outline"
+                aria-label="Save feedback"
+                className="h-7 px-2 bg-transparent"
+              >
                 <Check className="w-3 h-3" />
               </Button>
-              <Button onClick={handleCancel} size="sm" variant="outline" className="h-7 px-2 bg-transparent">
+              <Button
+                onClick={handleCancel}
+                size="sm"
+                variant="outline"
+                aria-label="Cancel editing"
+                className="h-7 px-2 bg-transparent"
+              >
                 <X className="w-3 h-3" />
               </Button>
             </div>
@@ -65,6 +77,7 @@ export function FeedbackItem({ item, onEdit, onVote, hasVoted = false }: Feedbac
                 onClick={() => onVote(item.id)}
                 variant="ghost"
                 size="sm"
+                aria-label={`Vote for feedback: ${item.content}`}
                 className={`h-7 px-2 transition-colors ${
                   hasVoted ? "text-blue-600 bg-blue-50 hover:bg-blue-100" : "text-slate-600 hover:text-blue-600"
                 }`}
@@ -76,6 +89,7 @@ export function FeedbackItem({ item, onEdit, onVote, hasVoted = false }: Feedbac
                 onClick={() => setIsEditing(true)}
                 variant="ghost"
                 size="sm"
+                aria-label="Edit feedback"
                 className="h-7 px-2 text-slate-600 hover:text-slate-800"
               >
                 <Edit2 className="w-3 h-3" />
