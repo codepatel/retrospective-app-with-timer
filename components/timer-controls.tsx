@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react"
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Play, Pause, Square, Clock, Lock } from "lucide-react"
@@ -13,6 +13,13 @@ const TIMER_OPTIONS = [
   { value: 10, label: "10 minutes" },
   { value: 15, label: "15 minutes" },
 ]
+
+const ACTION_PAST_TENSE: Record<string, string> = {
+  start: "started",
+  pause: "paused",
+  resume: "resumed",
+  stop: "stopped",
+}
 
 export interface TimerControlsRef {
   resetTimer: () => void
@@ -159,9 +166,11 @@ export const TimerControls = forwardRef<TimerControlsRef, TimerControlsProps>(({
         setIsPaused(timerState.is_paused)
         setControlledBy(timerState.controlled_by)
 
+        const actionDescription = ACTION_PAST_TENSE[action] ?? action
+
         toast({
           title: "Success",
-          description: `Timer ${action}ed successfully`,
+          description: `Timer ${actionDescription} successfully`,
         })
       } else {
         const error = await response.json()

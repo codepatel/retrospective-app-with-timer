@@ -2,9 +2,12 @@ import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 import { broadcastFeedbackEvent, createFeedbackEvent } from "@/lib/real-time-events"
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+type RouteContext = { params: Promise<{ id: string }> }
+
+export async function PUT(request: NextRequest, context: RouteContext) {
   try {
-    const feedbackId = Number.parseInt(params.id)
+    const { id } = await context.params
+    const feedbackId = Number.parseInt(id, 10)
     const { content } = await request.json()
 
     if (isNaN(feedbackId)) {
@@ -48,9 +51,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
-    const feedbackId = Number.parseInt(params.id)
+    const { id } = await context.params
+    const feedbackId = Number.parseInt(id, 10)
 
     if (isNaN(feedbackId)) {
       return NextResponse.json({ error: "Invalid feedback ID" }, { status: 400 })

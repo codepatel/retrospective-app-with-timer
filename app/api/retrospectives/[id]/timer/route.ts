@@ -4,6 +4,8 @@ import { broadcastTimerEvent, createTimerEvent } from "@/lib/real-time-events"
 
 const sql = neon(process.env.DATABASE_URL!)
 
+type RouteContext = { params: Promise<{ id: string }> }
+
 // Server-side timer management
 const activeTimers = new Map<number, NodeJS.Timeout>()
 
@@ -17,6 +19,32 @@ interface TimerState {
   controlled_by: string | null
 }
 
+type TimerUpdateValue = string | number | boolean | null | { raw: string }
+
+const isRawUpdateValue = (value: TimerUpdateValue): value is { raw: string } =>
+  typeof value === "object" && value !== null && "raw" in value
+
+const formatTimerUpdateValue = (value: TimerUpdateValue): string => {
+  if (isRawUpdateValue(value)) {
+    return value.raw
+  }
+
+  if (value === null) {
+    return "NULL"
+  }
+
+  if (typeof value === "string") {
+    return `'${value.replace(/'/g, "''")}'`
+  }
+
+  return String(value)
+}
+
+const buildUpdateSetClause = (fields: Record<string, TimerUpdateValue>) =>
+  Object.entries(fields)
+    .map(([key, value]) => `${key} = ${formatTimerUpdateValue(value)}`)
+    .join(", ")
+
 function getDeviceId(request: NextRequest): string {
   const userAgent = request.headers.get("user-agent") || ""
   const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown"
@@ -24,9 +52,10 @@ function getDeviceId(request: NextRequest): string {
   return `${ip}-${userAgent.slice(0, 50)}-${timestamp}`.replace(/[^a-zA-Z0-9-]/g, "").slice(0, 100)
 }
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
-    const retrospectiveId = Number.parseInt(params.id)
+    const { id } = await context.params
+    const retrospectiveId = Number.parseInt(id, 10)
 
     if (isNaN(retrospectiveId)) {
       return NextResponse.json({ error: "Invalid retrospective ID" }, { status: 400 })
@@ -125,9 +154,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, context: RouteContext) {
   try {
-    const retrospectiveId = Number.parseInt(params.id)
+    const { id } = await context.params
+    const retrospectiveId = Number.parseInt(id, 10)
     const { action, duration, deviceId } = await request.json()
     const finalDeviceId = deviceId || getDeviceId(request)
 
@@ -179,24 +209,23 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       )
     }
 
-    const safeTimerUpdate = async (updateFields: Record<string, any>, whereClause = "") => {
+    const safeTimerUpdate = async (
+      updateFields: Record<string, TimerUpdateValue>,
+      whereClause = "",
+    ) => {
       try {
-        const setClause = Object.entries(updateFields)
-          .map(([key, value]) => `${key} = ${typeof value === "string" ? `'${value}'` : value}`)
-          .join(", ")
+        const setClause = buildUpdateSetClause(updateFields)
 
         const query = `UPDATE retrospectives SET ${setClause} WHERE id = ${retrospectiveId}${whereClause}`
         await sql.unsafe(query)
       } catch (controlledByError) {
         // Fallback: update without new columns
-        const fallbackFields = { ...updateFields }
+        const fallbackFields: Record<string, TimerUpdateValue> = { ...updateFields }
         delete fallbackFields.timer_controlled_by
         delete fallbackFields.timer_remaining_time
 
         if (Object.keys(fallbackFields).length > 0) {
-          const setClause = Object.entries(fallbackFields)
-            .map(([key, value]) => `${key} = ${typeof value === "string" ? `'${value}'` : value}`)
-            .join(", ")
+          const setClause = buildUpdateSetClause(fallbackFields)
 
           const query = `UPDATE retrospectives SET ${setClause} WHERE id = ${retrospectiveId}${whereClause}`
           await sql.unsafe(query)
@@ -214,10 +243,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
         await safeTimerUpdate({
           timer_duration: duration,
-          timer_start_time: "NOW()",
+          timer_start_time: { raw: "NOW()" },
           timer_is_running: true,
           timer_is_paused: false,
-          timer_controlled_by: `'${finalDeviceId}'`,
+          timer_controlled_by: finalDeviceId,
         })
 
         // Set server-side timer to auto-stop when duration expires
@@ -328,7 +357,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
         if (remainingTime > 0) {
           await safeTimerUpdate({
-            timer_start_time: "NOW()",
+            timer_start_time: { raw: "NOW()" },
             timer_duration: remainingTime,
             timer_is_running: true,
             timer_is_paused: false,
@@ -375,8 +404,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         await safeTimerUpdate({
           timer_is_running: false,
           timer_is_paused: false,
-          timer_start_time: "NULL",
-          timer_controlled_by: "NULL",
+          timer_start_time: null,
+          timer_controlled_by: null,
           timer_remaining_time: 0,
         })
 

@@ -1,5 +1,4 @@
-import assert from 'node:assert'
-import { afterEach, beforeEach, test } from 'node:test'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { getDeviceId } from '../lib/device-id'
 
@@ -32,84 +31,85 @@ class MemoryStorage implements Storage {
   }
 }
 
-const originalWindow = globalThis.window
+const originalWindow = (globalThis as { window?: typeof window }).window
 const originalLocalStorage = (globalThis as { localStorage?: Storage }).localStorage
 const originalRandomUUID = globalThis.crypto.randomUUID
 
-beforeEach(() => {
-  // Reset globals to their original state before each test
-  if (originalWindow === undefined) {
+describe('getDeviceId', () => {
+  beforeEach(() => {
+    // Reset globals to their original state before each test
+    if (originalWindow === undefined) {
+      delete (globalThis as any).window
+    } else {
+      ;(globalThis as any).window = originalWindow
+    }
+
+    if (originalLocalStorage === undefined) {
+      delete (globalThis as any).localStorage
+    } else {
+      ;(globalThis as any).localStorage = originalLocalStorage
+    }
+
+    globalThis.crypto.randomUUID = originalRandomUUID
+  })
+
+  afterEach(() => {
+    // Ensure globals are restored even if a test mutates them
+    if (originalWindow === undefined) {
+      delete (globalThis as any).window
+    } else {
+      ;(globalThis as any).window = originalWindow
+    }
+
+    if (originalLocalStorage === undefined) {
+      delete (globalThis as any).localStorage
+    } else {
+      ;(globalThis as any).localStorage = originalLocalStorage
+    }
+
+    globalThis.crypto.randomUUID = originalRandomUUID
+  })
+
+  it('returns a fallback value when executed without a browser window', () => {
     delete (globalThis as any).window
-  } else {
-    ;(globalThis as any).window = originalWindow
-  }
-
-  if (originalLocalStorage === undefined) {
     delete (globalThis as any).localStorage
-  } else {
-    ;(globalThis as any).localStorage = originalLocalStorage
-  }
 
-  globalThis.crypto.randomUUID = originalRandomUUID
-})
+    const result = getDeviceId()
 
-afterEach(() => {
-  // Ensure globals are restored even if a test mutates them
-  if (originalWindow === undefined) {
-    delete (globalThis as any).window
-  } else {
-    ;(globalThis as any).window = originalWindow
-  }
+    expect(result).toBe('server-fallback')
+  })
 
-  if (originalLocalStorage === undefined) {
-    delete (globalThis as any).localStorage
-  } else {
-    ;(globalThis as any).localStorage = originalLocalStorage
-  }
+  it('generates and persists a new id when one is not stored', () => {
+    const storage = new MemoryStorage()
+    ;(globalThis as any).localStorage = storage
+    ;(globalThis as any).window = { localStorage: storage }
 
-  globalThis.crypto.randomUUID = originalRandomUUID
-})
+    globalThis.crypto.randomUUID = () => '11111111-2222-3333-4444-555555555555'
 
-test('returns a fallback value when executed without a browser window', () => {
-  delete (globalThis as any).window
-  delete (globalThis as any).localStorage
+    const result = getDeviceId()
 
-  const result = getDeviceId()
+    expect(result).toBe('11111111-2222-3333-4444-555555555555')
+    expect(storage.getItem('retrospective-device-id')).toBe(
+      '11111111-2222-3333-4444-555555555555',
+    )
+  })
 
-  assert.strictEqual(result, 'server-fallback')
-})
+  it('returns an existing id without calling randomUUID', () => {
+    const storage = new MemoryStorage()
+    storage.setItem('retrospective-device-id', 'existing-id')
 
-test('generates and persists a new id when one is not stored', () => {
-  const storage = new MemoryStorage()
-  ;(globalThis as any).localStorage = storage
-  ;(globalThis as any).window = { localStorage: storage }
+    ;(globalThis as any).localStorage = storage
+    ;(globalThis as any).window = { localStorage: storage }
 
-  globalThis.crypto.randomUUID = () => '11111111-2222-3333-4444-555555555555'
+    let wasCalled = false
+    globalThis.crypto.randomUUID = () => {
+      wasCalled = true
+      return '99999999-aaaa-bbbb-cccc-dddddddddddd'
+    }
 
-  const result = getDeviceId()
+    const result = getDeviceId()
 
-  assert.strictEqual(result, '11111111-2222-3333-4444-555555555555')
-  assert.strictEqual(
-    storage.getItem('retrospective-device-id'),
-    '11111111-2222-3333-4444-555555555555',
-  )
-})
-
-test('returns an existing id without calling randomUUID', () => {
-  const storage = new MemoryStorage()
-  storage.setItem('retrospective-device-id', 'existing-id')
-
-  ;(globalThis as any).localStorage = storage
-  ;(globalThis as any).window = { localStorage: storage }
-
-  let wasCalled = false
-  globalThis.crypto.randomUUID = () => {
-    wasCalled = true
-    return '99999999-aaaa-bbbb-cccc-dddddddddddd'
-  }
-
-  const result = getDeviceId()
-
-  assert.strictEqual(result, 'existing-id')
-  assert.strictEqual(wasCalled, false)
+    expect(result).toBe('existing-id')
+    expect(wasCalled).toBe(false)
+  })
 })

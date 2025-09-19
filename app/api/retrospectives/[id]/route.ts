@@ -1,22 +1,26 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, initializeDatabase } from "@/lib/db"
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+type RouteContext = { params: Promise<{ id: string }> }
+
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
     await initializeDatabase()
 
-    const isUUID = params.id.length === 36 && params.id.includes("-")
+    const { id } = await context.params
+    const isUUID = id.length === 36 && id.includes("-")
+    const numericId = Number.parseInt(id, 10)
 
     const result = isUUID
       ? await sql`
           SELECT id, title, session_id, created_at, is_active, timer_enabled
           FROM retrospectives
-          WHERE session_id = ${params.id} AND is_active = true
+          WHERE session_id = ${id} AND is_active = true
         `
       : await sql`
           SELECT id, title, session_id, created_at, is_active, timer_enabled
           FROM retrospectives
-          WHERE id = ${Number.parseInt(params.id)} AND is_active = true
+          WHERE id = ${numericId} AND is_active = true
         `
 
     if (result.length === 0) {
@@ -30,20 +34,22 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     await initializeDatabase()
 
     const { timer_enabled } = await request.json()
+    const { id } = await context.params
+    const retrospectiveId = Number.parseInt(id, 10)
 
     if (typeof timer_enabled !== "boolean") {
       return NextResponse.json({ error: "timer_enabled must be a boolean" }, { status: 400 })
     }
 
     const result = await sql`
-      UPDATE retrospectives 
+      UPDATE retrospectives
       SET timer_enabled = ${timer_enabled}
-      WHERE id = ${Number.parseInt(params.id)} AND is_active = true
+      WHERE id = ${retrospectiveId} AND is_active = true
       RETURNING id, title, session_id, created_at, is_active, timer_enabled
     `
 

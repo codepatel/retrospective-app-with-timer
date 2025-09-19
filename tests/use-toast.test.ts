@@ -1,5 +1,4 @@
-import assert from 'node:assert'
-import { afterEach, test } from 'node:test'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { reducer, resetToastTestState } from '../hooks/use-toast'
 
@@ -19,77 +18,79 @@ const createToast = (overrides?: Partial<ToastState['toasts'][number]>): ToastSt
   ...overrides,
 })
 
-afterEach(() => {
-  resetToastTestState()
-})
+describe('useToast reducer', () => {
+  afterEach(() => {
+    resetToastTestState()
+  })
 
-test('ADD_TOAST prepends the toast and enforces the toast limit', () => {
-  const initial: ToastState = { toasts: [] }
+  it('ADD_TOAST prepends the toast and enforces the toast limit', () => {
+    const initial: ToastState = { toasts: [] }
 
-  const first = reducer(initial as any, {
-    type: 'ADD_TOAST',
-    toast: createToast({ id: 'first' }),
-  }) as ToastState
+    const first = reducer(initial as any, {
+      type: 'ADD_TOAST',
+      toast: createToast({ id: 'first' }),
+    }) as ToastState
 
-  assert.strictEqual(first.toasts.length, 1)
-  assert.strictEqual(first.toasts[0]?.id, 'first')
+    expect(first.toasts).toHaveLength(1)
+    expect(first.toasts[0]?.id).toBe('first')
 
-  const second = reducer(first as any, {
-    type: 'ADD_TOAST',
-    toast: createToast({ id: 'second' }),
-  }) as ToastState
+    const second = reducer(first as any, {
+      type: 'ADD_TOAST',
+      toast: createToast({ id: 'second' }),
+    }) as ToastState
 
-  assert.strictEqual(second.toasts.length, 1)
-  assert.strictEqual(second.toasts[0]?.id, 'second')
-})
+    expect(second.toasts).toHaveLength(1)
+    expect(second.toasts[0]?.id).toBe('second')
+  })
 
-test('UPDATE_TOAST merges data into an existing toast', () => {
-  const initial: ToastState = {
-    toasts: [createToast({ id: 'update-me', title: 'Initial Title', description: 'Old description' })],
-  }
+  it('UPDATE_TOAST merges data into an existing toast', () => {
+    const initial: ToastState = {
+      toasts: [createToast({ id: 'update-me', title: 'Initial Title', description: 'Old description' })],
+    }
 
-  const updated = reducer(initial as any, {
-    type: 'UPDATE_TOAST',
-    toast: { id: 'update-me', description: 'Updated description' },
-  }) as ToastState
+    const updated = reducer(initial as any, {
+      type: 'UPDATE_TOAST',
+      toast: { id: 'update-me', description: 'Updated description' },
+    }) as ToastState
 
-  assert.strictEqual(updated.toasts[0]?.id, 'update-me')
-  assert.strictEqual(updated.toasts[0]?.title, 'Initial Title')
-  assert.strictEqual(updated.toasts[0]?.description, 'Updated description')
-})
+    expect(updated.toasts[0]?.id).toBe('update-me')
+    expect(updated.toasts[0]?.title).toBe('Initial Title')
+    expect(updated.toasts[0]?.description).toBe('Updated description')
+  })
 
-test('DISMISS_TOAST closes only the targeted toast when an id is provided', () => {
-  const initial: ToastState = {
-    toasts: [createToast({ id: 'keep-open' }), createToast({ id: 'close-me' })],
-  }
+  it('DISMISS_TOAST closes only the targeted toast when an id is provided', () => {
+    const initial: ToastState = {
+      toasts: [createToast({ id: 'keep-open' }), createToast({ id: 'close-me' })],
+    }
 
-  const dismissed = reducer(initial as any, {
-    type: 'DISMISS_TOAST',
-    toastId: 'close-me',
-  }) as ToastState
+    const dismissed = reducer(initial as any, {
+      type: 'DISMISS_TOAST',
+      toastId: 'close-me',
+    }) as ToastState
 
-  const closeMe = dismissed.toasts.find((toast) => toast.id === 'close-me')
-  const keepOpen = dismissed.toasts.find((toast) => toast.id === 'keep-open')
+    const closeMe = dismissed.toasts.find((toast) => toast.id === 'close-me')
+    const keepOpen = dismissed.toasts.find((toast) => toast.id === 'keep-open')
 
-  assert.strictEqual(closeMe?.open, false)
-  assert.strictEqual(keepOpen?.open, true)
-})
+    expect(closeMe?.open).toBe(false)
+    expect(keepOpen?.open).toBe(true)
+  })
 
-test('REMOVE_TOAST deletes a toast by id and clears all when no id is provided', () => {
-  const initial: ToastState = {
-    toasts: [createToast({ id: 'a' }), createToast({ id: 'b' })],
-  }
+  it('REMOVE_TOAST deletes a toast by id and clears all when no id is provided', () => {
+    const initial: ToastState = {
+      toasts: [createToast({ id: 'a' }), createToast({ id: 'b' })],
+    }
 
-  const afterRemoval = reducer(initial as any, {
-    type: 'REMOVE_TOAST',
-    toastId: 'a',
-  }) as ToastState
+    const afterRemoval = reducer(initial as any, {
+      type: 'REMOVE_TOAST',
+      toastId: 'a',
+    }) as ToastState
 
-  assert.deepStrictEqual(afterRemoval.toasts.map((toast) => toast.id), ['b'])
+    expect(afterRemoval.toasts.map((toast) => toast.id)).toEqual(['b'])
 
-  const cleared = reducer(initial as any, {
-    type: 'REMOVE_TOAST',
-  }) as ToastState
+    const cleared = reducer(initial as any, {
+      type: 'REMOVE_TOAST',
+    }) as ToastState
 
-  assert.strictEqual(cleared.toasts.length, 0)
+    expect(cleared.toasts).toHaveLength(0)
+  })
 })

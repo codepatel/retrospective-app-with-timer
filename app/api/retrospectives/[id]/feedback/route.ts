@@ -1,9 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+type RouteContext = { params: Promise<{ id: string }> }
+
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
-    const retrospectiveId = Number.parseInt(params.id)
+    const { id } = await context.params
+    const retrospectiveId = Number.parseInt(id, 10)
 
     if (isNaN(retrospectiveId)) {
       return NextResponse.json({ error: "Invalid retrospective ID" }, { status: 400 })

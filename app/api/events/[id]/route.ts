@@ -1,10 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { eventStore } from "@/lib/real-time-events"
 
+type RouteContext = { params: Promise<{ id: string }> }
+
 // API endpoint for clients to poll for real-time events
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
-    const retrospectiveId = Number.parseInt(params.id)
+    const { id } = await context.params
+    const retrospectiveId = Number.parseInt(id, 10)
     const { searchParams } = new URL(request.url)
     const since = Number.parseInt(searchParams.get("since") || "0")
 
